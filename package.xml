@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>nav2_rl_controller</name>
+  <version>0.0.1</version>
+  <description>RL-based local controller plugin for Nav2 using ONNX actor model</description>
+
+  <maintainer email="you@example.com">Your Name</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>rclcpp_lifecycle</depend>
+  <depend>nav2_core</depend>
+  <depend>nav2_ros_common</depend>
+  <depend>nav2_costmap_2d</depend>
+  <depend>geometry_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>pluginlib</depend>
+  <depend>tf2_ros</depend>
+
+  <!-- For ONNX Runtime C++ API. Ensure onnxruntime is installed in system. -->
+  <build_depend>onnxruntime</build_depend>
+  <exec_depend>onnxruntime</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
