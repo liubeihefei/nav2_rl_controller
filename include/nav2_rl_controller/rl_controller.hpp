@@ -49,7 +49,7 @@ public:
 
   void reset();
 
-  // Test helper: 以单元测试期望的方式模拟连续调用。每次调用会生成当前帧并在历史不足时把当前帧加入历史并返回空向量；
+  // 测试函数: 以单元测试期望的方式模拟连续调用。每次调用会生成当前帧并在历史不足时把当前帧加入历史并返回空向量；
   // 当历史已满时返回完整的模型输入（用于单元测试验证）
   std::vector<float> assembleObservationPublic()
   {
@@ -72,35 +72,35 @@ protected:
   // 从已保存的全局路径中基于当前位姿选取下一个目标点并返回 target_cos, target_sin, target_distance
   std::tuple<double, double, double> computeTargetFromPlan(const geometry_msgs::msg::PoseStamped & current_pose);
 
-  // Inference
+  // 模型推理
   std::vector<float> runModel(const std::vector<float> & input);
 
-  // Helpers
-  // 组装输入时会返回完整的扁平输入向量，并把当前帧（尚未写入模型输出）放入 current_frame_out
+  // 组装一次模型模型输入
   std::vector<float> assembleObservation(
     const geometry_msgs::msg::PoseStamped * pose,
     const geometry_msgs::msg::Twist * vel,
     std::vector<float> & current_frame_out);
-
+  
+  // 组装一帧完整观测帧（25维）
   std::vector<float> computeFallbackObservation(const geometry_msgs::msg::PoseStamped * pose);
 
   rclcpp_lifecycle::LifecycleNode::WeakPtr node_;
   std::shared_ptr<tf2_ros::Buffer> tf_;
   std::string plugin_name_;
-
   std::shared_ptr<nav2_costmap_2d::Costmap2DROS> costmap_ros_;
   nav2_costmap_2d::Costmap2D * costmap_ = nullptr;
 
   std::mutex history_mutex_;
+
   // 历史帧缓冲：保存已形成的完整帧（每帧 25 维：20 obs_min + 3 target + 2 last_action）
   // 内容由 computeVelocityCommands 在推理后加入（推理完成后会把模型输出回写到帧的最后两维）
   std::deque<std::vector<float>> history_frames_;
 
   // 历史帧数量（不包含当前帧），默认 50；实际传入模型的帧数为 history_length_ + 1（包含当前帧）
   size_t history_length_ = 50;
-  // 每帧完整观测维度为 min_obs_dim_ + 3 + 2（通常为 25）
+  // 每帧完整观测维度为 min_obs_dim_ + 3 + 2（默认 25）
   size_t obs_dim_ = 25;
-  // obs_min 的维度（默认 20）
+  // 障碍物距离的维度（默认 20）
   size_t min_obs_dim_ = 20;
 
   // 保存模型上一次输出（linear, angular）用于构造当前帧的最后两维
@@ -125,21 +125,21 @@ protected:
   Ort::SessionOptions session_options_;
   // Lazy init controls for ONNX session
   std::mutex ort_mutex_;
-  bool ort_failed_ = false; // if true, further attempts to init will be skipped
+  // if true, further attempts to init will be skipped
+  bool ort_failed_ = false;
 
-
-  // Model input size expected (1275)
+  // 模型输入维度 (默认 1275)
   size_t model_input_size_ = 1275;
 
-  // 参数
   // ONNX 模型路径
   std::string model_path_ = "";
-  // 每帧观测总维度为 25 (20 obs_min + 3 target + 2 last_action)
+  
+  // 最大线速度和角速度
   double max_linear_speed_ = 0.5;
-  double base_max_linear_speed_ = 0.5;  // 保存默认的最大线速度以便恢复
+  double base_max_linear_speed_ = 0.5;
   double max_angular_speed_ = 1.0;
   double min_obs_distance_ = 0.2;
-  // 路径稀疏化距离（米），每sparse_path_distance米保留一个路径点
+  // 路径稀疏化距离（米），每 sparse_path_distance 米保留一个路径点
   double sparse_path_distance_ = 2.5;
   
   // 路径稀疏化辅助函数
