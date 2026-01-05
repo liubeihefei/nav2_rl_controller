@@ -117,6 +117,10 @@ protected:
 
   // 辅助函数：从四元数计算 yaw
   double yawFromQuat(const geometry_msgs::msg::Quaternion & q);
+  
+  bool debug = false;
+  // 辅助函数：调试时将观测保存到文件
+  void saveObservationToFile(const std::vector<float>& obs);
 
   // ONNX Runtime
   // Delay constructing Ort::Env until configure() to avoid global/early construction issues

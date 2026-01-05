@@ -78,6 +78,9 @@ void RLController::configure(
 
   // 路径稀疏化距离（米），默认2.5米
   node->get_parameter_or("sparse_path_distance", sparse_path_distance_, sparse_path_distance_);
+
+  // 调试参数，如果为 true，则将观测保存到文本文件以便调试，默认不开启
+  node->get_parameter_or("debug", debug, false);
   
   // TODO：之前为了 debug，这里模型初始化改成延迟到第一次推理时进行，需要改回来
   // Configure ONNX session options; delay actual session creation until first inference
@@ -233,7 +236,8 @@ geometry_msgs::msg::TwistStamped RLController::computeVelocityCommands(
     std::vector<float> input = assembleObservation(&pose, &velocity, current_frame);
     // 注意 assembleObservation 总是返回有效输入（历史不足时用零填充），不再返回空向量
     if (input.size() != model_input_size_) {
-        if (node) RCLCPP_WARN(node->get_logger(), "Input size mismatch: %zu (expected %zu)", input.size(), model_input_size_);
+        if (node)
+          RCLCPP_WARN(node->get_logger(), "Input size mismatch: %zu (expected %zu)", input.size(), model_input_size_);
         // 输入不匹配时返回零速度
         cmd_out.twist.linear.x = 0.0;
         cmd_out.twist.angular.z = 0.0;
@@ -265,14 +269,15 @@ geometry_msgs::msg::TwistStamped RLController::computeVelocityCommands(
 
       // 将模型输出写回当前帧的最后两维，并将该帧保存到历史帧缓冲中（供后续推理使用）
       if (current_frame.size() == obs_dim_) {
-          current_frame[min_obs_dim_ + 3] = static_cast<float>(lin);
-          current_frame[min_obs_dim_ + 4] = static_cast<float>(ang);
-          std::lock_guard<std::mutex> lock(history_mutex_);
-          history_frames_.push_back(current_frame);
-          while (history_frames_.size() > history_length_) history_frames_.pop_front();
+        current_frame[min_obs_dim_ + 3] = static_cast<float>(lin);
+        current_frame[min_obs_dim_ + 4] = static_cast<float>(ang);
+        std::lock_guard<std::mutex> lock(history_mutex_);
+        history_frames_.push_back(current_frame);
+        while (history_frames_.size() > history_length_) history_frames_.pop_front();
       }
     } else {
-        cmd_out.twist.linear.x = 0.0; cmd_out.twist.angular.z = 0.0;
+        cmd_out.twist.linear.x = 0.0;
+        cmd_out.twist.angular.z = 0.0;
     }
 
     // 返回控制指令
@@ -412,6 +417,10 @@ std::vector<float> RLController::computeFallbackObservation(const geometry_msgs:
   // 拿上次输出的线速度和角速度
   obs[min_obs_dim_ + 3] = static_cast<float>(last_action_.linear.x);
   obs[min_obs_dim_ + 4] = static_cast<float>(last_action_.angular.z);
+
+  // 打印调试信息
+  if(debug)
+    saveObservationToFile(obs);
 
   return obs;
 }
@@ -643,6 +652,48 @@ double RLController::yawFromQuat(const geometry_msgs::msg::Quaternion & q)
   double siny = 2.0 * (q.w * q.z + q.x * q.y);
   double cosy = 1.0 - 2.0 * (q.y * q.y + q.z * q.z);
   return std::atan2(siny, cosy);
+}
+
+// 辅助函数：将一帧观测保存到文本文件
+void RLController::saveObservationToFile(const std::vector<float>& obs) {
+  // 确保有足够的维度
+  if (obs.size() < 25) return;
+  
+  // 打开文件（追加模式）
+  std::ofstream outfile("observations.txt", std::ios_base::app);
+  
+  if (!outfile.is_open()) {
+      RCLCPP_WARN(this->get_logger(), "无法打开文件保存观测数据");
+      return;
+  }
+  
+  // 写入时间戳（可选）
+  auto now = std::chrono::system_clock::now();
+  auto now_time = std::chrono::system_clock::to_time_t(now);
+  outfile << "Time: " << std::ctime(&now_time);
+  
+  // 第一行：前20个值（扇区化距离）
+  outfile << "扇区观测: ";
+  for (size_t i = 0; i < 20; ++i) {
+      outfile << obs[i];
+      if (i < 19) outfile << ", ";
+  }
+  outfile << std::endl;
+  
+  // 第二行：中间3个值（目标信息）
+  outfile << "目标信息: ";
+  outfile << obs[20] << ", " << obs[21] << ", " << obs[22];
+  outfile << std::endl;
+  
+  // 第三行：最后2个值（动作信息）
+  outfile << "动作信息: ";
+  outfile << obs[23] << ", " << obs[24];
+  outfile << std::endl;
+  
+  // 添加分隔线
+  outfile << "----------------------------------------" << std::endl;
+  
+  outfile.close();
 }
 
 }  // namespace nav2_rl_controller
