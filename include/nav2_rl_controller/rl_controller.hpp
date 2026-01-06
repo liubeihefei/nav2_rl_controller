@@ -121,6 +121,9 @@ protected:
   double sparse_path_distance_ = 2.5;
   // debug模式
   bool debug = false;
+  std::string output_observations_file = "";
+  std::string output_img_file = "";
+  std::string output_compute_file = "";
   
   // 辅助函数：从四元数计算 yaw
   double yawFromQuat(const geometry_msgs::msg::Quaternion & q);
@@ -130,6 +133,9 @@ protected:
 
   // 辅助函数：调试时将观测保存到文件
   void saveObservationToFile(const std::vector<float>& obs);
+  
+  // 辅助函数：调试时将障碍物距离绘制成图像并保存
+  bool saveCostmapImage(const std::vector<float>& obs, int image_size = 600);
 };
 
 }  // namespace nav2_rl_controller

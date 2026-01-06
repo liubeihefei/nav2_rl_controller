@@ -14,6 +14,8 @@
 #include <string>
 #include <fstream>
 
+#include <opencv2/opencv.hpp>
+
 using namespace std::chrono_literals;
 
 /*
@@ -78,6 +80,9 @@ void RLController::configure(
   node->get_parameter_or("sparse_path_distance", sparse_path_distance_, sparse_path_distance_);
   // debug模式
   node->get_parameter_or("debug", debug, false);
+  node->get_parameter_or("output_observations_file", output_observations_file, "");
+  node->get_parameter_or("output_img_file", output_img_file, "");
+  node->get_parameter_or("output_compute_file", output_compute_file, "");
 
   // Configure ONNX session options; delay actual session creation until first inference
   session_options_.SetIntraOpNumThreads(1);
@@ -180,6 +185,9 @@ geometry_msgs::msg::TwistStamped RLController::computeVelocityCommands(
   geometry_msgs::msg::TwistStamped cmd_out;
   cmd_out.header.stamp = node ? node->now() : rclcpp::Time(0);
 
+  // 打开文件（追加模式）
+  std::ofstream outfile(output_compute_file, std::ios_base::app);
+
   try {
     // 构造当前输入帧并获取完整扁平化的模型输入
     std::vector<float> current_frame;
@@ -189,62 +197,66 @@ geometry_msgs::msg::TwistStamped RLController::computeVelocityCommands(
       if (node) RCLCPP_WARN(node->get_logger(), "Input size mismatch: %zu (expected %zu)", input.size(), model_input_size_);
       // return zero cmd on mismatch
       cmd_out.twist.linear.x = 0.0; cmd_out.twist.angular.z = 0.0;
+      outfile << "Input size mismatch: " << input.size() << " (expected " << model_input_size_ << ")\n";
+      outfile.close();
       return cmd_out;
     }
 
     // Run model
     std::vector<float> output = runModel(input);
-    // 打开文件（追加模式）
-    std::ofstream outfile("/home/unitree/nav2_gps/nav2_rl_controller/output.txt", std::ios_base::app);
-    if (output.size() == 2)
-      outfile << output[0] << " " << output[1] << std::endl;
-    else
-      outfile << "模型输出大小不对：" << output.size() << std::endl;
     
-    outfile.close();
-    
-
     if (output.size() >= 2) {
-        double lin = output[0];
-        double ang = output[1];
-        // enforce speed limits
-        lin = std::clamp(lin, -max_linear_speed_, max_linear_speed_);
-        ang = std::clamp(ang, -max_angular_speed_, max_angular_speed_);
+      double lin = output[0];
+      double ang = output[1];
+      // enforce speed limits
+      lin = std::clamp(lin, -max_linear_speed_, max_linear_speed_);
+      ang = std::clamp(ang, -max_angular_speed_, max_angular_speed_);
 
-        // Safety: if closest obstacle is too close, stop
-        if (last_obs_min_dist_ < min_obs_distance_) {
-            if (node) RCLCPP_WARN(node->get_logger(), "Obstacle too close (%.3f < %.3f), stopping" , last_obs_min_dist_, min_obs_distance_);
-            lin = 0.0;
-            ang = 0.0;
-        }
+      // Safety: if closest obstacle is too close, stop
+      if (last_obs_min_dist_ < min_obs_distance_) {
+        if (node)
+          RCLCPP_WARN(node->get_logger(), "Obstacle too close (%.3f < %.3f), stopping" , last_obs_min_dist_, min_obs_distance_);
+        lin = 0.0;
+        ang = 0.0;
+      }
 
-        cmd_out.twist.linear.x = lin;
-        cmd_out.twist.angular.z = ang;
+      cmd_out.twist.linear.x = lin;
+      cmd_out.twist.angular.z = ang;
 
-        // Update last action
-        last_action_.linear.x = lin;
-        last_action_.angular.z = ang;
+      // Update last action
+      last_action_.linear.x = lin;
+      last_action_.angular.z = ang;
 
-        // 将模型输出写回当前帧的最后两维，并将该帧保存到历史帧缓冲中（供后续推理使用）
-        if (current_frame.size() == obs_dim_) {
-            current_frame[min_obs_dim_ + 3] = static_cast<float>(lin);
-            current_frame[min_obs_dim_ + 4] = static_cast<float>(ang);
-            std::lock_guard<std::mutex> lock(history_mutex_);
-            history_frames_.push_back(current_frame);
-            while (history_frames_.size() > history_length_) history_frames_.pop_front();
-        }
+      outfile << "Model output: lin=" << lin << " ang=" << ang << "\n";
+
+      // 将模型输出写回当前帧的最后两维，并将该帧保存到历史帧缓冲中（供后续推理使用）
+      if (current_frame.size() == obs_dim_) {
+        current_frame[min_obs_dim_ + 3] = static_cast<float>(lin);
+        current_frame[min_obs_dim_ + 4] = static_cast<float>(ang);
+        std::lock_guard<std::mutex> lock(history_mutex_);
+        history_frames_.push_back(current_frame);
+        while (history_frames_.size() > history_length_) history_frames_.pop_front();
+      }
     } else {
-        cmd_out.twist.linear.x = 0.0; cmd_out.twist.angular.z = 0.0;
+      outfile << "Model output size insufficient: " << output.size() << "\n";
+      cmd_out.twist.linear.x = 0.0; cmd_out.twist.angular.z = 0.0;
     }
 
+    outfile.close();
     return cmd_out;
   } catch (const std::exception & e) {
-    if (node) RCLCPP_ERROR(node->get_logger(), "computeVelocityCommands exception: %s", e.what());
+    if (node)
+      RCLCPP_ERROR(node->get_logger(), "computeVelocityCommands exception: %s", e.what());
     cmd_out.twist.linear.x = 0.0; cmd_out.twist.angular.z = 0.0;
+    outfile << "computeVelocityCommands exception: " << e.what() << "\n";
+    outfile.close();
     return cmd_out;
   } catch (...) {
-    if (node) RCLCPP_ERROR(node->get_logger(), "computeVelocityCommands unknown exception");
+    if (node)
+      RCLCPP_ERROR(node->get_logger(), "computeVelocityCommands unknown exception");
     cmd_out.twist.linear.x = 0.0; cmd_out.twist.angular.z = 0.0;
+    outfile << "computeVelocityCommands unknown exception\n";
+    outfile.close();
     return cmd_out;
   }
 }
@@ -287,9 +299,10 @@ std::vector<float> RLController::assembleObservation(const geometry_msgs::msg::P
   current_frame[min_obs_dim_ + 3] = static_cast<float>(last_action_.linear.x);
   current_frame[min_obs_dim_ + 4] = static_cast<float>(last_action_.angular.z);
 
-  // debug：保存最新的一帧输入到文件
+  // debug：保存最新的一帧输入到文件和costmap图像
   if(debug){
     saveObservationToFile(current_frame);
+    saveCostmapImage(current_frame, 600);
   }
 
   // 如果历史帧不足 history_length_：用当前帧（s0）填充前面的帧（与episode开始时保持一致）
@@ -299,7 +312,7 @@ std::vector<float> RLController::assembleObservation(const geometry_msgs::msg::P
     // 用当前帧填充前面的帧（模拟episode开始时用s0填满历史队列）
     for (size_t m = 0; m < num_missing_frames; ++m) {
       for (size_t j = 0; j < obs_dim_ && idx < input.size(); ++j) {
-          input[idx++] = current_frame[j];
+        input[idx++] = current_frame[j];
       }
     }
     // 添加实际的历史帧（若某帧 malformed 则用 current_frame 填充并记录警告）
@@ -418,6 +431,9 @@ std::vector<float> RLController::computeObsFromCostmap(const geometry_msgs::msg:
   }
 
   last_obs_min_dist_ = (std::isfinite(global_min) ? global_min : max_range);
+
+  // 逆时针放，与计算时相反
+  std::reverse(obs.begin(), obs.end());
   return obs;
 }
 
@@ -569,7 +585,7 @@ double RLController::yawFromQuat(const geometry_msgs::msg::Quaternion & q)
   return std::atan2(siny, cosy);
 }
 
-// 路径稀疏化：每distance_threshold米保留一个路径点
+// 辅助函数：路径稀疏化，每distance_threshold米保留一个路径点
 nav_msgs::msg::Path RLController::sparsePath(const nav_msgs::msg::Path & path, double distance_threshold)
 {
   nav_msgs::msg::Path sparse_path;
@@ -619,7 +635,7 @@ void RLController::saveObservationToFile(const std::vector<float>& obs) {
   if (obs.size() < 25) return;
   
   // 打开文件（追加模式）
-  std::ofstream outfile("/home/unitree/nav2_gps/nav2_rl_controller/observations.txt", std::ios_base::app);
+  std::ofstream outfile(output_observations_file, std::ios_base::app);
   
   if (!outfile.is_open()) {
     // RCLCPP_WARN(this->get_logger(), "无法打开文件保存观测数据");
@@ -653,6 +669,152 @@ void RLController::saveObservationToFile(const std::vector<float>& obs) {
   outfile << "----------------------------------------" << std::endl;
   
   outfile.close();
+}
+
+// 辅助函数：使用 OpenCV 绘制 costmap 图像
+bool RLController::saveCostmapImage(const std::vector<float>& obs, int image_size = 600) {
+  if (obs.size() < 23) {
+    std::cerr << "Error: obs vector must have at least 23 elements" << std::endl;
+    return false;
+  }
+  
+  // 创建画布
+  cv::Mat image = cv::Mat::zeros(image_size, image_size, CV_8UC3);
+  cv::Scalar background_color(255, 255, 255);  // 白色背景
+  image = background_color;
+  
+  // 获取数据
+  std::vector<float> sector_distances(obs.begin(), obs.begin() + 20);
+  float target_cos = obs[20];
+  float target_sin = obs[21];
+  float target_distance = obs[22];
+  
+  // 参数设置
+  int center_x = image_size / 2;
+  int center_y = image_size / 2;
+  int num_sectors = 20;
+  double sector_angle = M_PI / num_sectors;  // 每个扇区 9 度
+  
+  // 计算最大距离用于缩放
+  float max_distance = 0.0f;
+  for (float dist : sector_distances) {
+      if (dist > max_distance) max_distance = dist;
+  }
+  if (max_distance < 1e-6) max_distance = 1.0f;
+  
+  // 缩放因子：将实际距离映射到图像像素
+  float scale_factor = (image_size / 2.2f) / max_distance;  // 留一些边距
+  
+  // 绘制坐标轴
+  cv::line(image, cv::Point(center_x, 0), cv::Point(center_x, image_size), cv::Scalar(200, 200, 200), 1);
+  cv::line(image, cv::Point(0, center_y), cv::Point(image_size, center_y), cv::Scalar(200, 200, 200), 1);
+  
+  // 绘制距离环
+  for (int i = 1; i <= 5; i++) {
+    float radius = (max_distance * i / 5.0f) * scale_factor;
+    cv::circle(image, cv::Point(center_x, center_y), radius, cv::Scalar(220, 220, 220), 1);
+  }
+  
+  // 绘制扇区（障碍物距离）
+  // 注意：obs 中的障碍物距离是逆时针存储的（从 y 轴负方向到 y 轴正方向）
+  // 对应角度：-90° 到 +90°，其中 -90° = y轴负方向，0° = x轴正方向，+90° = y轴正方向
+  for (int i = 0; i < num_sectors; i++) {
+    // 计算扇区角度（逆时针从 -90° 开始）
+    // 每个扇区 9°，共 20 个扇区覆盖 180°
+    double start_angle = -M_PI_2 + i * sector_angle;
+    double end_angle = start_angle + sector_angle;
+    double center_angle = start_angle + sector_angle / 2.0;
+    
+    // 获取该扇区的距离
+    float distance = sector_distances[i];
+    if (distance < 1e-6) continue;  // 无有效数据
+    
+    // 转换为像素坐标
+    float pixel_distance = distance * scale_factor;
+    
+    // 扇区起始和结束点
+    float start_x = center_x + pixel_distance * cos(start_angle);
+    float start_y = center_y - pixel_distance * sin(start_angle);  // 注意：图像y轴向下
+    
+    float end_x = center_x + pixel_distance * cos(end_angle);
+    float end_y = center_y - pixel_distance * sin(end_angle);
+    
+    // 绘制扇区的弧线
+    std::vector<cv::Point> sector_points;
+    sector_points.push_back(cv::Point(center_x, center_y));
+    
+    // 生成弧线上的点
+    int num_points = 20;
+    for (int j = 0; j <= num_points; j++) {
+      double angle = start_angle + (end_angle - start_angle) * j / num_points;
+      float x = center_x + pixel_distance * cos(angle);
+      float y = center_y - pixel_distance * sin(angle);
+      sector_points.push_back(cv::Point(x, y));
+    }
+    
+    sector_points.push_back(cv::Point(center_x, center_y));
+    
+    // 填充扇区（使用半透明颜色）
+    cv::Mat overlay = image.clone();
+    cv::fillPoly(overlay, std::vector<std::vector<cv::Point>>{sector_points}, cv::Scalar(173, 216, 230), cv::LINE_AA);  // 浅蓝色
+    
+    // 添加透明度
+    double alpha = 0.3;
+    cv::addWeighted(overlay, alpha, image, 1 - alpha, 0, image);
+    
+    // 绘制扇区边界线
+    cv::line(image, cv::Point(center_x, center_y), cv::Point(start_x, start_y), cv::Scalar(100, 100, 100), 1);
+    cv::line(image, cv::Point(center_x, center_y), cv::Point(end_x, end_y), cv::Scalar(100, 100, 100), 1);
+    
+    // 在扇区中心显示距离值
+    float text_x = center_x + pixel_distance * 0.7 * cos(center_angle);
+    float text_y = center_y - pixel_distance * 0.7 * sin(center_angle);
+    
+    std::stringstream dist_ss;
+    dist_ss << std::fixed << std::setprecision(1) << distance;
+    cv::putText(image, dist_ss.str(), cv::Point(text_x, text_y), cv::FONT_HERSHEY_SIMPLEX, 0.3, cv::Scalar(0, 0, 0), 1);
+  }
+  
+  // 绘制目标点
+  // 目标点的方位角：atan2(target_sin, target_cos)
+  float target_angle = atan2(target_sin, target_cos);
+  float target_pixel_distance = target_distance * scale_factor;
+  
+  float target_x = center_x + target_pixel_distance * cos(target_angle);
+  float target_y = center_y - target_pixel_distance * sin(target_angle);  // 图像y轴向下
+  
+  // 绘制目标点（红色三角形）
+  cv::drawMarker(image, cv::Point(target_x, target_y), cv::Scalar(0, 0, 255), cv::MARKER_TRIANGLE_UP, 20, 2);
+  
+  // 绘制目标点连线
+  cv::line(image, cv::Point(center_x, center_y), cv::Point(target_x, target_y), cv::Scalar(0, 0, 255), 2, cv::LINE_AA);
+  
+  // 绘制机器人（中心点）
+  cv::circle(image, cv::Point(center_x, center_y), 10, cv::Scalar(0, 0, 0), -1);  // 黑色实心圆
+  cv::circle(image, cv::Point(center_x, center_y), 10, cv::Scalar(255, 255, 255), 1);  // 白色边框
+  
+  // 绘制方向指示（前方）
+  cv::arrowedLine(image, cv::Point(center_x, center_y),
+                  cv::Point(center_x + 30, center_y),
+                  cv::Scalar(0, 100, 0), 2, cv::LINE_AA, 0, 0.3);
+  
+  // 添加文字说明
+  cv::putText(image, "Robot", cv::Point(center_x - 20, center_y - 15),
+              cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 0, 0), 1);
+  cv::putText(image, "Target", cv::Point(target_x + 10, target_y - 10),
+              cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 0, 255), 1);
+  cv::putText(image, "Forward (X+)", cv::Point(center_x + 40, center_y - 10),
+              cv::FONT_HERSHEY_SIMPLEX, 0.4, cv::Scalar(0, 100, 0), 1);
+  
+  // 添加坐标轴标签
+  cv::putText(image, "Y-", cv::Point(center_x + 5, image_size - 10),
+              cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 0, 0), 1);
+  cv::putText(image, "Y+", cv::Point(center_x + 5, 20),
+              cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 0, 0), 1);
+  
+  // 保存图像
+  bool success = cv::imwrite(output_img_file, image);
+  return success;
 }
 
 }  // namespace nav2_rl_controller

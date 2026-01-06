@@ -22,6 +22,7 @@ find_package(nav_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(pluginlib REQUIRED)
 find_package(tf2_ros REQUIRED)
+find_package(OpenCV REQUIRED)
 
 # ONNX Runtime
 # find_package(onnxruntime REQUIRED)
@@ -47,6 +48,9 @@ ament_target_dependencies(${PROJECT_NAME}
 # Link to ONNX Runtime
 target_include_directories(${PROJECT_NAME} PRIVATE ${ONNXRUNTIME_INCLUDE_DIRS})
 target_link_libraries(${PROJECT_NAME} ${ONNXRUNTIME_LIBRARIES})
+
+# 链接 OpenCV 库
+target_link_libraries(${PROJECT_NAME} ${OpenCV_LIBS})
 
 pluginlib_export_plugin_description_file(nav2_core nav2_rl_controller.xml)
 
