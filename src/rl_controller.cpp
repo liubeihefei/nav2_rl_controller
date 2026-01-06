@@ -80,9 +80,6 @@ void RLController::configure(
   node->get_parameter_or("sparse_path_distance", sparse_path_distance_, sparse_path_distance_);
   // debug模式
   node->get_parameter_or("debug", debug, false);
-  node->get_parameter_or("output_observations_file", output_observations_file, "");
-  node->get_parameter_or("output_img_file", output_img_file, "");
-  node->get_parameter_or("output_compute_file", output_compute_file, "");
 
   // Configure ONNX session options; delay actual session creation until first inference
   session_options_.SetIntraOpNumThreads(1);
@@ -672,11 +669,13 @@ void RLController::saveObservationToFile(const std::vector<float>& obs) {
 }
 
 // 辅助函数：使用 OpenCV 绘制 costmap 图像
-bool RLController::saveCostmapImage(const std::vector<float>& obs, int image_size = 600) {
+bool RLController::saveCostmapImage(const std::vector<float>& obs, int image_size) {
   if (obs.size() < 23) {
     std::cerr << "Error: obs vector must have at least 23 elements" << std::endl;
     return false;
   }
+
+  image_size = 600;
   
   // 创建画布
   cv::Mat image = cv::Mat::zeros(image_size, image_size, CV_8UC3);
