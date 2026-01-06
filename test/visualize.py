@@ -4,9 +4,7 @@ import matplotlib.pyplot as plt
 
 def draw_lidar_sectors(
         sector_distances,
-        target_cos,
-        target_sin,
-        target_distance,
+        target_info,
         clockwise=True,
         save_path="lidar_sector_plot.png"
 ):
@@ -14,6 +12,10 @@ def draw_lidar_sectors(
     sector_distances: list or np.array, length=20
     clockwise: True=顺时针绘制, False=逆时针绘制
     """
+
+    target_cos = target_info[0]
+    target_sin = target_info[1]
+    target_distance = target_info[2]
 
     assert len(sector_distances) == 20, "必须是20个扇区距离"
 
@@ -27,7 +29,7 @@ def draw_lidar_sectors(
         num_sectors
     )
 
-    if clockwise:
+    if not clockwise:
         angles = angles[::-1]
 
     fig, ax = plt.subplots(figsize=(6, 6))
@@ -61,7 +63,7 @@ def draw_lidar_sectors(
     ax.set_aspect("equal")
     max_range = max(sector_distances) + 1.0
     ax.set_xlim(-max_range, max_range)
-    ax.set_ylim(0, max_range)
+    ax.set_ylim(-max_range, max_range)
 
     ax.set_xlabel("y (horizon)")
     ax.set_ylabel("x (forward)")
@@ -75,22 +77,13 @@ def draw_lidar_sectors(
 
 
 if __name__ == "__main__":
-    sector_obs = [
-        4.75, 3.7, 3.55, 3.55, 3.85,
-        4.75, 5.4, 10, 10, 10,
-        10, 2.8, 1.6, 1.25, 1.15,
-        1.1, 1.05, 1.05, 1.1, 1.15
-    ]
+    sector_obs = [10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 3.55, 3.35, 3.25, 3.25, 3.4, 4, 10, 10]
 
-    target_cos = 0.234133
-    target_sin = -0.972205
-    target_distance = 2.10805
+    target_info = [-0.416975, 0.908918, 2.614]
 
     draw_lidar_sectors(
         sector_distances=sector_obs,
-        target_cos=target_cos,
-        target_sin=target_sin,
-        target_distance=target_distance,
-        clockwise=True,  # ← 改这里切换顺 / 逆时针
+        target_info=target_info,
+        clockwise=False,  # ← 改这里切换顺 / 逆时针
         save_path="lidar_view.png"
     )
