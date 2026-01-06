@@ -7,4 +7,3 @@ max_angular_speed: 1.0
 min_obs_distance: 0.2
 rays_per_sector: 8  # 每个扇区内部的采样射线数（用于更稳健地估计扇区最小距离）
 sparse_path_distance: 2.5  # 路径稀疏化距离（米），每sparse_path_distance米保留一个路径点
-debug: false  # 如果为 true，则将观测保存到文本文件以便调试
