@@ -2,8 +2,8 @@ import numpy as np
 import onnxruntime as ort
 
 # 你的数据
-sector_obs = [10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 3.55, 3.35, 3.25, 3.25, 3.4, 4, 10, 10]
-target_info = [-0.416975, 0.908918, 2.614]
+sector_obs = [10, 3.6, 3.2, 3.2, 3.25, 3.65, 4.4, 3.4, 3.1, 3.1, 2.85, 1.65, 1.2, 1.05, 0.95, 0.95, 0.9, 0.95, 0.95, 1.05]
+target_info = [-0.288599, -0.95745, 2.59999]
 action_info = [0, 0]
 
 # 组合并重复51次
@@ -14,7 +14,7 @@ full_input = pattern * 51  # 重复51次
 input_array = np.array(full_input, dtype=np.float32).reshape(1, -1)
 
 # 加载模型并推理
-model_path = "SAC_actor.onnx"
+model_path = "../model/SAC_actor.onnx"
 session = ort.InferenceSession(model_path)
 input_name = session.get_inputs()[0].name
 output_name = session.get_outputs()[0].name
