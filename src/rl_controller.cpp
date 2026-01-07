@@ -47,7 +47,7 @@ void RLController::configure(
   tf_ = tf;
   costmap_ros_ = costmap_ros;
   if (costmap_ros_) {
-      costmap_ = costmap_ros_->getCostmap();
+    costmap_ = costmap_ros_->getCostmap();
   }
 
   // 加载参数
@@ -215,6 +215,7 @@ geometry_msgs::msg::TwistStamped RLController::computeVelocityCommands(
           RCLCPP_WARN(node->get_logger(), "Obstacle too close (%.3f < %.3f), stopping" , last_obs_min_dist_, min_obs_distance_);
         lin = 0.0;
         ang = 0.0;
+        outfile << "Obstacle too close (" << last_obs_min_dist_ << " < " << min_obs_distance_ << "), stopping\n";
       }
 
       cmd_out.twist.linear.x = lin;
@@ -223,8 +224,6 @@ geometry_msgs::msg::TwistStamped RLController::computeVelocityCommands(
       // Update last action
       last_action_.linear.x = lin;
       last_action_.angular.z = ang;
-
-      outfile << "Model output: lin=" << lin << " ang=" << ang << "\n";
 
       // 将模型输出写回当前帧的最后两维，并将该帧保存到历史帧缓冲中（供后续推理使用）
       if (current_frame.size() == obs_dim_) {
@@ -239,6 +238,7 @@ geometry_msgs::msg::TwistStamped RLController::computeVelocityCommands(
       cmd_out.twist.linear.x = 0.0; cmd_out.twist.angular.z = 0.0;
     }
 
+    outfile << "Computed successfully: linear.x=" << cmd_out.twist.linear.x << " angular.z=" << cmd_out.twist.angular.z << "\n";
     outfile.close();
     return cmd_out;
   } catch (const std::exception & e) {
@@ -438,27 +438,45 @@ std::vector<float> RLController::computeObsFromCostmap(const geometry_msgs::msg:
 std::vector<float> RLController::runModel(const std::vector<float> & input)
 {
   std::vector<float> result;
+  // 打开文件（追加模式）
+  std::ofstream outfile(output_model_run_file, std::ios_base::app);
+
   try {
     // Lazy initialize ONNX env/session if not already created
     if (!ort_session_) {
       std::lock_guard<std::mutex> lock(ort_mutex_);
-      if (ort_failed_) return result;
+      if (ort_failed_) {
+        outfile << "ONNX Runtime previously failed to initialize, skipping runModel\n";
+        outfile.close();
+        return result;
+      }
 
       // Ensure Ort::Env exists (may have been created in configure)
       if (!ort_env_) {
         try {
           ort_env_.reset(new Ort::Env(ORT_LOGGING_LEVEL_WARNING, plugin_name_.c_str()));
           auto node = node_.lock();
-          if (node) RCLCPP_INFO(node->get_logger(), "Ort::Env initialized lazily for %s", plugin_name_.c_str());
+          if (node) {
+            outfile << "Ort::Env initialized lazily for " << plugin_name_ << "\n";
+            RCLCPP_INFO(node->get_logger(), "Ort::Env initialized lazily for %s", plugin_name_.c_str());
+          }
         } catch (const std::exception & e) {
           auto node = node_.lock();
-          if (node) RCLCPP_ERROR(node->get_logger(), "Failed to initialize Ort::Env lazily: %s", e.what());
+          if (node) {
+            outfile << "Failed to initialize Ort::Env lazily: " << e.what() << "\n";
+            RCLCPP_ERROR(node->get_logger(), "Failed to initialize Ort::Env lazily: %s", e.what());
+          }
           ort_failed_ = true;
+          outfile.close();
           return result;
         } catch (...) {
           auto node = node_.lock();
-          if (node) RCLCPP_ERROR(node->get_logger(), "Unknown failure initializing Ort::Env lazily");
+          if (node) {
+            outfile << "Unknown failure initializing Ort::Env lazily\n";
+            RCLCPP_ERROR(node->get_logger(), "Unknown failure initializing Ort::Env lazily");
+          }
           ort_failed_ = true;
+          outfile.close();
           return result;
         }
       }
@@ -468,17 +486,28 @@ std::vector<float> RLController::runModel(const std::vector<float> & input)
           // Ort::Session expects a reference to Ort::Env
           ort_session_.reset(new Ort::Session(*ort_env_, model_path_.c_str(), session_options_));
           auto node = node_.lock();
-          if (node) RCLCPP_INFO(node->get_logger(), "Loaded ONNX model lazily: %s", model_path_.c_str());
+          if (node) {
+            outfile << "Loaded ONNX model lazily: " << model_path_ << "\n";
+            RCLCPP_INFO(node->get_logger(), "Loaded ONNX model lazily: %s", model_path_.c_str());
+          }
         } catch (const std::exception & e) {
           auto node = node_.lock();
-          if (node) RCLCPP_ERROR(node->get_logger(), "Failed to load ONNX model lazily: %s", e.what());
+          if (node) {
+            outfile << "Failed to load ONNX model lazily: " << e.what() << "\n";
+            RCLCPP_ERROR(node->get_logger(), "Failed to load ONNX model lazily: %s", e.what());
+          }
           ort_failed_ = true;
+          outfile.close();
           return result;
         }
       }
     }
 
-    if (!ort_session_) return result;
+    if (!ort_session_) {
+      outfile << "ONNX Runtime session not initialized, skipping runModel\n";
+      outfile.close();
+      return result;
+    }
 
     Ort::AllocatorWithDefaultOptions allocator;
     // Input name(s) - use AllocatedStringPtr to keep storage alive while calling Run
@@ -514,25 +543,37 @@ std::vector<float> RLController::runModel(const std::vector<float> & input)
     // Run
     auto output_tensors = ort_session_->Run(Ort::RunOptions{nullptr}, input_node_names.data(), &input_tensor, 1, output_node_names.data(), output_node_names.size());
 
-    // Assume first output is the action vector
+    // Assume first output is the action vector，如此复杂是为了处理[2]和[1，2]两种同质情况
     if (output_tensors.size() > 0) {
       float* out_data = output_tensors[0].GetTensorMutableData<float>();
       auto out_shape = output_tensors[0].GetTensorTypeAndShapeInfo().GetShape();
       size_t out_size = 1;
-      for (auto d : out_shape) out_size *= d;
+      for (auto d : out_shape)
+        out_size *= d;
       result.resize(out_size);
-      for (size_t i = 0; i < out_size; ++i) result[i] = out_data[i];
+      for (size_t i = 0; i < out_size; ++i)
+        result[i] = out_data[i];
     }
+    outfile << "Model run successful, output size: " << result.size() << "\n";
+    outfile.close();
     return result;
   } catch (const std::exception & e) {
     auto node = node_.lock();
-    if (node) RCLCPP_ERROR(node->get_logger(), "runModel exception: %s", e.what());
+    if (node) {
+      outfile << "runModel exception: " << e.what() << "\n";
+      RCLCPP_ERROR(node->get_logger(), "runModel exception: %s", e.what());
+    }
     ort_failed_ = true;
+    outfile.close();
     return result;
   } catch (...) {
     auto node = node_.lock();
-    if (node) RCLCPP_ERROR(node->get_logger(), "runModel unknown exception");
+    if (node) {
+      outfile << "runModel unknown exception\n";
+      RCLCPP_ERROR(node->get_logger(), "runModel unknown exception");
+    }
     ort_failed_ = true;
+    outfile.close();
     return result;
   }
 } 
@@ -697,7 +738,7 @@ bool RLController::saveCostmapImage(const std::vector<float>& obs, int image_siz
   // 计算最大距离用于缩放
   float max_distance = 0.0f;
   for (float dist : sector_distances) {
-      if (dist > max_distance) max_distance = dist;
+    if (dist > max_distance) max_distance = dist;
   }
   if (max_distance < 1e-6) max_distance = 1.0f;
   

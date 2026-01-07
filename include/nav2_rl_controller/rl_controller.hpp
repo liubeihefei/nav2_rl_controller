@@ -121,9 +121,11 @@ protected:
   double sparse_path_distance_ = 2.5;
   // debug模式
   bool debug = false;
+  // 这几个并不能设置，ros2似乎不能设置 string 类型的参数
   std::string output_observations_file = "/home/unitree/nav2_gps/nav2_rl_controller/logs/observations.txt";
   std::string output_img_file = "/home/unitree/nav2_gps/nav2_rl_controller/logs/img.jpg";
   std::string output_compute_file = "/home/unitree/nav2_gps/nav2_rl_controller/logs/compute.txt";
+  std::string output_model_run_file = "/home/unitree/nav2_gps/nav2_rl_controller/logs/model_run.txt";
 
   // 辅助函数：从四元数计算 yaw
   double yawFromQuat(const geometry_msgs::msg::Quaternion & q);
