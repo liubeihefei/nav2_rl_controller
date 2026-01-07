@@ -53,7 +53,7 @@ void RLController::configure(
   // 加载参数
   auto node = node_.lock();
   if (node) RCLCPP_INFO(node->get_logger(), "RLController::configure start (%s)", plugin_name_.c_str());
-  node->get_parameter_or("model_path", model_path_, std::string("/path/to/SAC_actor.onnx"));
+  node->get_parameter_or("model_path", model_path_, std::string("/home/unitree/nav2_gps/nav2_rl_controller/model/SAC_actor.onnx"));
   // history_length 参数以整数读取再赋值给 size_t 成员，避免 rclcpp 参数模板歧义
   int history_length_param = static_cast<int>(history_length_);
   node->get_parameter_or("history_length", history_length_param, history_length_param);
@@ -79,7 +79,7 @@ void RLController::configure(
   // 路径稀疏化距离（米），默认2.5米
   node->get_parameter_or("sparse_path_distance", sparse_path_distance_, sparse_path_distance_);
   // debug模式
-  node->get_parameter_or("debug", debug, false);
+  node->get_parameter_or("debug", debug, true);
 
   // Configure ONNX session options; delay actual session creation until first inference
   session_options_.SetIntraOpNumThreads(1);
@@ -214,8 +214,13 @@ geometry_msgs::msg::TwistStamped RLController::computeVelocityCommands(
         if (node)
           RCLCPP_WARN(node->get_logger(), "Obstacle too close (%.3f < %.3f), stopping" , last_obs_min_dist_, min_obs_distance_);
         lin = 0.0;
-        ang = 0.0;
+        ang = 0.3;
         outfile << "Obstacle too close (" << last_obs_min_dist_ << " < " << min_obs_distance_ << "), stopping\n";
+      }
+
+      // 对线速度进行截断
+      if (lin < 0.0) {
+        lin = 0.0;
       }
 
       cmd_out.twist.linear.x = lin;
@@ -430,7 +435,7 @@ std::vector<float> RLController::computeObsFromCostmap(const geometry_msgs::msg:
   last_obs_min_dist_ = (std::isfinite(global_min) ? global_min : max_range);
 
   // 逆时针放，与计算时相反
-  std::reverse(obs.begin(), obs.end());
+  // std::reverse(obs.begin(), obs.end());
   return obs;
 }
 

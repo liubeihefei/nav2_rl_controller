@@ -120,7 +120,7 @@ protected:
   // 路径稀疏化距离（米），每sparse_path_distance米保留一个路径点
   double sparse_path_distance_ = 2.5;
   // debug模式
-  bool debug = false;
+  bool debug = true;
   // 这几个并不能设置，ros2似乎不能设置 string 类型的参数
   std::string output_observations_file = "/home/unitree/nav2_gps/nav2_rl_controller/logs/observations.txt";
   std::string output_img_file = "/home/unitree/nav2_gps/nav2_rl_controller/logs/img.jpg";
