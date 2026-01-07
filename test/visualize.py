@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
+# 手动输入障碍物距离和目标点信息，绘制雷达扇区图
 
 def draw_lidar_sectors(
         sector_distances,

@@ -1,3 +1,4 @@
+# 弃用，看FolloPath.yaml
 model_path: "/home/unitree/nav2_gps/nav2_rl_controller/model/SAC_actor.onnx"
 min_obs_dim: 20  # obs_min 的维度（20）
 history_length: 50

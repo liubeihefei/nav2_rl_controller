@@ -80,6 +80,10 @@ void RLController::configure(
   node->get_parameter_or("sparse_path_distance", sparse_path_distance_, sparse_path_distance_);
   // debug模式
   node->get_parameter_or("debug", debug, true);
+  node->get_parameter_or("output_observations_file", output_observations_file, output_observations_file);
+  node->get_parameter_or("output_img_file", output_img_file, output_img_file);
+  node->get_parameter_or("output_compute_file", output_compute_file, output_compute_file);
+  node->get_parameter_or("output_model_run_file", output_model_run_file, output_model_run_file);
 
   // Configure ONNX session options; delay actual session creation until first inference
   session_options_.SetIntraOpNumThreads(1);
@@ -685,10 +689,12 @@ void RLController::saveObservationToFile(const std::vector<float>& obs) {
     return;
   }
   
-  // 写入时间戳（可选）
+  // 获取当前时间戳（毫秒级精度）
   auto now = std::chrono::system_clock::now();
-  auto now_time = std::chrono::system_clock::to_time_t(now);
-  outfile << "Time: " << std::ctime(&now_time);
+  auto duration = now.time_since_epoch();
+  auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
+  // 写入时间戳
+  outfile << "Timestamp: " << millis << std::endl;
   
   // 第一行：前20个值（扇区化距离）
   outfile << "扇区观测: ";
