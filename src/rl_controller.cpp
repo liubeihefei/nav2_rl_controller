@@ -82,8 +82,6 @@ void RLController::configure(
 	node->get_parameter_or("sparse_path_distance", sparse_path_distance_, sparse_path_distance_);
 	// debug模式
 	node->get_parameter_or("debug", debug, true);
-	// baseline数据格式
-	node->get_parameter_or("baseline", baseline, false);
 	node->get_parameter_or("output_observations_file", output_observations_file, output_observations_file);
 	node->get_parameter_or("output_img_file", output_img_file, output_img_file);
 	node->get_parameter_or("output_compute_file", output_compute_file, output_compute_file);
@@ -307,18 +305,11 @@ std::vector<float> RLController::assembleObservation(const geometry_msgs::msg::P
 	double tcos = 0.0, tsin = 0.0, tdist = 0.0;
 	if (pose)
 		std::tie(tcos, tsin, tdist) = computeTargetFromPlan(*pose);
-	if(baseline){
-		// baseline数据格式，距离在前，cos sin 在后
-		current_frame[min_obs_dim_ + 0] = static_cast<float>(tdist);
-		current_frame[min_obs_dim_ + 1] = static_cast<float>(tcos);
-		current_frame[min_obs_dim_ + 2] = static_cast<float>(tsin);
-	}
-	else{
-		// 原始数据格式，cos sin 在前，距离在后
-		current_frame[min_obs_dim_ + 0] = static_cast<float>(tcos);
-		current_frame[min_obs_dim_ + 1] = static_cast<float>(tsin);
-		current_frame[min_obs_dim_ + 2] = static_cast<float>(tdist);
-	}
+
+	// 目标信息
+	current_frame[min_obs_dim_ + 0] = static_cast<float>(tdist);
+	current_frame[min_obs_dim_ + 1] = static_cast<float>(tcos);
+	current_frame[min_obs_dim_ + 2] = static_cast<float>(tsin);
 
 	// last_action（使用上一轮模型输出）
 	current_frame[min_obs_dim_ + 3] = static_cast<float>(last_action_.linear.x);
@@ -727,16 +718,10 @@ void RLController::saveObservationToFile(const std::vector<float>& obs) {
 	}
 	outfile << std::endl;
 	
-	// 第二行：中间3个值（目标信息），若是baseline格式则依旧按学长格式放，避免修改可视化代码
+	// 第二行：中间3个值（目标信息）
 	outfile << "目标信息: ";
-	if(baseline){
-		// baseline数据格式，距离在前，cos sin 在后
-		outfile << obs[22] << ", " << obs[20] << ", " << obs[21];
-	}
-	else{
-		// 原始数据格式，cos sin 在前，距离在后
-		outfile << obs[20] << ", " << obs[21] << ", " << obs[22];
-	}
+	// 距离、cos、sin
+	outfile << obs[20] << ", " << obs[21] << ", " << obs[22];
 	outfile << std::endl;
 	
 	// 第三行：最后2个值（动作信息）

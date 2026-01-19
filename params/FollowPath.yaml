@@ -11,7 +11,6 @@ FollowPath:
   rays_per_sector: 8  # 每个扇区内部的采样射线数（用于更稳健地估计扇区最小距离）
   sparse_path_distance: 2.5  # 路径稀疏化距离（米），每sparse_path_distance米保留一个路径点
   debug: true  # 是否开启调试模式
-  baseline: false  # 是否启用基线数据格式，即目标距离方位顺序不同
   output_observations_file = "/home/unitree/nav2_gps/nav2_rl_controller/logs/observations.txt"  # 输出观测值的文件路径
   output_img_file = "/home/unitree/nav2_gps/nav2_rl_controller/logs/img.jpg"                    # 输出障碍地图图像的文件路径
   output_compute_file = "/home/unitree/nav2_gps/nav2_rl_controller/logs/compute.txt"            # 输出一次速度指令计算过程日志的文件路径
