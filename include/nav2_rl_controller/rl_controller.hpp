@@ -121,6 +121,8 @@ protected:
 	double sparse_path_distance_ = 2.5;
 	// debug模式
 	bool debug = true;
+	// baseline数据格式
+	bool baseline = false;
 	// 这几个并不能设置，ros2似乎不能设置 string 类型的参数
 	std::string output_observations_file = "/home/unitree/nav2_gps/nav2_rl_controller/logs/observations.txt";
 	std::string output_img_file = "/home/unitree/nav2_gps/nav2_rl_controller/logs/img.jpg";
