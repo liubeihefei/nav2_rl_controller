@@ -1,6 +1,6 @@
 # 用于向rl控制器传参，需在使用nav2时替换对应位置
 FollowPath:
-  plugin: "dwb_core::DWBLocalPlanner"
+  plugin: "nav2_rl_controller::RLController"
   model_path: "/home/unitree/nav2_gps/nav2_rl_controller/model/SAC_actor.onnx"
   min_obs_dim: 20  # obs_min 的维度（20）
   history_length: 50

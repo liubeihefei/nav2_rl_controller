@@ -72,9 +72,8 @@ def draw_lidar_sectors(
 
 
 if __name__ == "__main__":
-    sector_obs = [10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10]
-
-    target_info = [0.0798401, -0.996808, 2.43963]
+    sector_obs = [0.85, 1, 1.05, 1.2, 10, 10, 10, 10, 3.65, 3.2, 3.1, 3.05, 3.2, 3.8, 3, 2.7, 2.3, 2.05, 2.05, 1.95]
+    target_info = [2.50807, 0.282852, 0.959164]
 
     draw_lidar_sectors(
         sector_distances=sector_obs,

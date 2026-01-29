@@ -19,19 +19,16 @@
 using namespace std::chrono_literals;
 
 /*
- * RL Controller 插件说明（中文）：
- * - 输入历史：使用最近 history_length_ 帧已完成的完整帧（每帧 25 维）加上当前帧，共 history_length_ + 1 帧
- *   每帧格式：[ obs_min(20) | target_cos (1) | target_sin (1) | target_dist (1) | last_action_linear (1) | last_action_angular (1) ]
+ * RL Controller 插件：
+ * - 输入历史：使用最近 history_length_ 帧已完成的完整帧加上当前帧，共 history_length_ + 1 帧
+ * - 当前baseline每帧格式：[ obs_min(20) | target_dist (1) | target_cos (1) | target_sin (1) | last_action_linear (1) | last_action_angular (1) ]
  * - 数据流：
- *   1) 在需要时，控制器使用内部的 costmap 来计算 20 维扇区化 obs_min（不再订阅外部话题）
+ *   1) 在需要时，控制器使用内部的 costmap 来计算 20 维扇区化 obs_min
  *   2) computeVelocityCommands 被调用时：
- *        - 用 costmap 衍生的 obs_min + 基于当前 pose 与已保存全局路径计算的 target(3) + last_action（上一次模型输出）
- *          构造当前帧（25 维），将其与历史完整帧拼接成模型输入（扁平化）
+ *        - 用 costmap 衍生的 obs_min + 基于当前 pose 与已保存全局路径计算的 target(3) + last_action（上一次模型输出）构造当前帧（25 维），将其与历史完整帧拼接成模型输入
  *        - 将输入发送给 ONNX 模型进行推理，得到新的动作输出（linear, angular）
  *        - 更新 last_action，并把模型输出写回当前帧的最后两维，然后把当前帧加入历史帧缓冲
- *   3) 下次推理重复上述过程，历史帧的最后两维始终保存了当时模型的输出（即回执）
- * - 设计要点：历史帧存储完整帧（含模型当时输出），以保证历史信息反映推理时刻的动作反馈；
- *   target 只在推理时使用当前位姿计算，历史帧不会被重新计算 target。
+ *   3) 下次推理重复上述过程，历史帧的最后两维始终保存了当时模型的输出
  */
 
 namespace nav2_rl_controller
@@ -50,13 +47,15 @@ void RLController::configure(
 		costmap_ = costmap_ros_->getCostmap();
 	}
 
-	// 加载参数
+	// 启动
 	auto node = node_.lock();
 	if (node)
 		RCLCPP_INFO(node->get_logger(), "RLController::configure start (%s)", plugin_name_.c_str());
 
+	// 获取模型路径
 	node->get_parameter_or("model_path", model_path_, std::string("/home/unitree/nav2_gps/nav2_rl_controller/model/SAC_actor.onnx"));
-	// history_length 参数以整数读取再赋值给 size_t 成员，避免 rclcpp 参数模板歧义
+
+	// history_length 成员参数以整数读取，避免 rclcpp 参数模板歧义
 	int history_length_param = static_cast<int>(history_length_);
 	node->get_parameter_or("history_length", history_length_param, history_length_param);
 	history_length_ = static_cast<size_t>(history_length_param);
@@ -65,23 +64,32 @@ void RLController::configure(
 	int min_obs_dim_param = static_cast<int>(min_obs_dim_);
 	node->get_parameter_or("min_obs_dim", min_obs_dim_param, min_obs_dim_param);
 	min_obs_dim_ = static_cast<size_t>(min_obs_dim_param);
-	// 每帧完整维度 = min_obs_dim + 3(target) + 2(last_action)
-	obs_dim_ = static_cast<size_t>(min_obs_dim_) + 3 + 2; // 25
-	// 模型输入大小 = (history_length + 1) * obs_dim（历史 N 帧 + 当前 1 帧）
+
+	// 计算每帧完整维度
+	obs_dim_ = static_cast<size_t>(min_obs_dim_) + 3 + 2;
+	// 模型输入大小 = （历史 N 帧 + 当前 1 帧） * 每帧完整维度
 	model_input_size_ = (history_length_ + 1) * obs_dim_;
 
+	// 获取最大线速度角速度
 	node->get_parameter_or("max_linear_speed", max_linear_speed_, max_linear_speed_);
 	base_max_linear_speed_ = max_linear_speed_;
 	node->get_parameter_or("max_angular_speed", max_angular_speed_, max_angular_speed_);
+
+	// 获取最小障碍物距离
 	node->get_parameter_or("min_obs_distance", min_obs_distance_, min_obs_distance_);
-	// 每扇区内部的射线数（用于更稳健的扇区最小距离估计，默认 8）
+
+	// 每扇区内部的射线数
 	int rays_per_sector_param = static_cast<int>(rays_per_sector_);
 	node->get_parameter_or("rays_per_sector", rays_per_sector_param, rays_per_sector_param);
 	rays_per_sector_ = static_cast<size_t>(rays_per_sector_param);
-	// 路径稀疏化距离（米），默认2.5米
+
+	// 路径稀疏化距离
 	node->get_parameter_or("sparse_path_distance", sparse_path_distance_, sparse_path_distance_);
+
 	// debug模式
 	node->get_parameter_or("debug", debug, true);
+
+	// 日志保存路径
 	node->get_parameter_or("output_observations_file", output_observations_file, output_observations_file);
 	node->get_parameter_or("output_img_file", output_img_file, output_img_file);
 	node->get_parameter_or("output_compute_file", output_compute_file, output_compute_file);
@@ -185,7 +193,7 @@ geometry_msgs::msg::TwistStamped RLController::computeVelocityCommands(
   nav2_core::GoalChecker * /*goal_checker*/)
 {
 	// 计算并返回控制命令：
-	// 1) 组装最近历史的输入（50 × 25 + 25 = 1275）
+	// 1) 组装最近历史的输入
 	// 2) 调用 ONNX 模型推理
 	// 3) 对输出做速度限幅和碰撞停止等安全检测
 	auto node = node_.lock();
@@ -203,24 +211,24 @@ geometry_msgs::msg::TwistStamped RLController::computeVelocityCommands(
 		if (input.size() != model_input_size_) {
 			if (node)
 				RCLCPP_WARN(node->get_logger(), "Input size mismatch: %zu (expected %zu)", input.size(), model_input_size_);
-			// return zero cmd on mismatch
+			// 输入不匹配模型输入大小则不动
 			cmd_out.twist.linear.x = 0.0; cmd_out.twist.angular.z = 0.0;
 			outfile << "Input size mismatch: " << input.size() << " (expected " << model_input_size_ << ")\n";
 			outfile.close();
 			return cmd_out;
 		}
 
-		// Run model
+		// 推理获得结果
 		std::vector<float> output = runModel(input);
 		
 		if (output.size() >= 2) {
 			double lin = output[0];
 			double ang = output[1];
-			// enforce speed limits
+			// 速度限制
 			lin = std::clamp(lin, -max_linear_speed_, max_linear_speed_);
 			ang = std::clamp(ang, -max_angular_speed_, max_angular_speed_);
 
-			// Safety: if closest obstacle is too close, stop
+			// 障碍物太近则旋转
 			if (last_obs_min_dist_ < min_obs_distance_) {
 				if (node)
 					RCLCPP_WARN(node->get_logger(), "Obstacle too close (%.3f < %.3f), stopping" , last_obs_min_dist_, min_obs_distance_);
@@ -229,15 +237,16 @@ geometry_msgs::msg::TwistStamped RLController::computeVelocityCommands(
 				outfile << "Obstacle too close (" << last_obs_min_dist_ << " < " << min_obs_distance_ << "), stopping\n";
 			}
 
-			// 对线速度进行截断
+			// 对线速度进行截断，不允许后退
 			if (lin < 0.0) {
 				lin = 0.0;
 			}
-
+			
+			// 一切ok则准备发送线速度角速度
 			cmd_out.twist.linear.x = lin;
 			cmd_out.twist.angular.z = ang;
 
-			// Update last action
+			// 更新上一次新速度角速度
 			last_action_.linear.x = lin;
 			last_action_.angular.z = ang;
 
@@ -277,10 +286,9 @@ geometry_msgs::msg::TwistStamped RLController::computeVelocityCommands(
 // 组装历史观测为模型输入
 std::vector<float> RLController::assembleObservation(const geometry_msgs::msg::PoseStamped * pose, const geometry_msgs::msg::Twist * /*vel*/, std::vector<float> & current_frame_out)
 {
-	// 从 history_frames_中按照时间从旧到新取出最多 history_length_ 帧（每帧 25 维），不足则用当前帧（s0）填充
-	// 组装输入：按照时间从旧到新拼接 history_length_ 帧历史（已包含模型输出）并在最后追加当前帧（尚未包含本次模型输出）
-	// 当前帧由最新的 obs20（或回退）、基于 pose 与 path 计算的 target（3）以及 last_action_（2）组成
-	// 历史不足时用当前帧填充（与episode开始时用s0填满历史队列的行为一致）
+	// 从 history_frames_中按照时间从旧到新取出最多 history_length_ 帧，不足则用当前帧填充
+	// 组装输入：按照时间从旧到新拼接 history_length_ 帧历史，并在最后追加当前帧
+	// 当前帧由最新的 obs20、基于 pose 与 path 计算的 target（3）以及 last_action_（2）组成
 	std::vector<float> input(model_input_size_, 0.0f);
 	std::lock_guard<std::mutex> lock(history_mutex_);
 
