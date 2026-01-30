@@ -2,9 +2,9 @@ import numpy as np
 import onnxruntime as ort
 
 # 你的数据
-sector_obs = [0.85, 1, 1.05, 1.2, 10, 10, 10, 10, 3.65, 3.2, 3.1, 3.05, 3.2, 3.8, 3, 2.7, 2.3, 2.05, 2.05, 1.95]
-target_info = [2.50807, 0.282852, 0.959164]
-action_info = [0, 0.915783]
+sector_obs = [10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10]
+target_info = [8.54408, -0.990012, 0.140981]
+action_info = [0.0, 0.3]
 
 # 组合并重复51次
 pattern = sector_obs + target_info + action_info

@@ -13,9 +13,9 @@ def draw_lidar_sectors(
     clockwise: True=顺时针绘制, False=逆时针绘制
     """
 
-    target_cos = target_info[0]
-    target_sin = target_info[1]
-    target_distance = target_info[2]
+    target_distance = target_info[0]
+    target_cos = target_info[1]
+    target_sin = target_info[2]
 
     num_sectors = 20
     sector_angle = np.deg2rad(180 / num_sectors)  # 9°
@@ -57,7 +57,7 @@ def draw_lidar_sectors(
 
     # 外观设置
     ax.set_aspect("equal")
-    max_range = max(sector_distances) + 1.0
+    max_range = max(sector_distances) + 5.0
     ax.set_xlim(-max_range, max_range)
     ax.set_ylim(-max_range, max_range)
 
@@ -72,8 +72,8 @@ def draw_lidar_sectors(
 
 
 if __name__ == "__main__":
-    sector_obs = [0.85, 1, 1.05, 1.2, 10, 10, 10, 10, 3.65, 3.2, 3.1, 3.05, 3.2, 3.8, 3, 2.7, 2.3, 2.05, 2.05, 1.95]
-    target_info = [2.50807, 0.282852, 0.959164]
+    sector_obs = [0.45, 0.5, 0.5, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 3.8, 3.35, 3.25, 3.25, 3.35, 2.65, 2.05]
+    target_info = [9.40769, 0.833785, -0.552089]
 
     draw_lidar_sectors(
         sector_distances=sector_obs,

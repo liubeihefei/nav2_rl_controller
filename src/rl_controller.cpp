@@ -20,8 +20,9 @@ using namespace std::chrono_literals;
 
 /*
  * RL Controller 插件：
- * - 输入历史：使用最近 history_length_ 帧已完成的完整帧加上当前帧，共 history_length_ + 1 帧
- * - 当前baseline每帧格式：[ obs_min(20) | target_dist (1) | target_cos (1) | target_sin (1) | last_action_linear (1) | last_action_angular (1) ]
+ * - baseline 无历史：history_length_ = 0，模型输入 25 维单帧；带历史时输入 (history_length_ + 1) * 25 维。
+ * - 每帧 25 维顺序：obs_min(20) | target_dist | target_cos | target_sin | last_action_linear | last_action_angular。
+ * - 雷达 obs_min：前方 180° 逆时针（-y 到 +y），20 扇区每扇区取最近障碍距离，与训练 prepare_state 分箱顺序需一致。
  * - 数据流：
  *   1) 在需要时，控制器使用内部的 costmap 来计算 20 维扇区化 obs_min
  *   2) computeVelocityCommands 被调用时：
@@ -53,7 +54,7 @@ void RLController::configure(
 		RCLCPP_INFO(node->get_logger(), "RLController::configure start (%s)", plugin_name_.c_str());
 
 	// 获取模型路径
-	node->get_parameter_or("model_path", model_path_, std::string("/home/unitree/nav2_gps/nav2_rl_controller/model/SAC_actor.onnx"));
+	node->get_parameter_or("model_path", model_path_, model_path_);
 
 	// history_length 成员参数以整数读取，避免 rclcpp 参数模板歧义
 	int history_length_param = static_cast<int>(history_length_);
@@ -65,9 +66,9 @@ void RLController::configure(
 	node->get_parameter_or("min_obs_dim", min_obs_dim_param, min_obs_dim_param);
 	min_obs_dim_ = static_cast<size_t>(min_obs_dim_param);
 
-	// 计算每帧完整维度
+	// 计算每帧完整维度：20 雷达 + 3 目标(dist,cos,sin) + 2 上一时刻动作(linear,angular) = 25
 	obs_dim_ = static_cast<size_t>(min_obs_dim_) + 3 + 2;
-	// 模型输入大小 = （历史 N 帧 + 当前 1 帧） * 每帧完整维度
+	// 模型输入大小 = （历史 N 帧 + 当前 1 帧） * 每帧完整维度；baseline 无历史时 = 25
 	model_input_size_ = (history_length_ + 1) * obs_dim_;
 
 	// 获取最大线速度角速度
@@ -309,7 +310,7 @@ std::vector<float> RLController::assembleObservation(const geometry_msgs::msg::P
 		current_frame[j] = obs20[j];
 	}
 
-	// target（三元组）基于当前 pose 与全局路径计算
+	// target（三元组）相对 base_link：距离 + cos(目标角) + sin(目标角)，与训练 prepare_state 一致
 	double tcos = 0.0, tsin = 0.0, tdist = 0.0;
 	if (pose)
 		std::tie(tcos, tsin, tdist) = computeTargetFromPlan(*pose);
@@ -382,6 +383,7 @@ std::vector<float> RLController::assembleObservation(const geometry_msgs::msg::P
 
 	// 返回当前构造的帧，供调用者在推理后填充模型输出并保存
 	current_frame_out = std::move(current_frame);
+
 	return input;
 }
 
@@ -407,7 +409,7 @@ std::vector<float> RLController::computeObsFromCostmap(const geometry_msgs::msg:
 	double step = std::max(0.01, map_res * 0.5); // 步进距离，至少 1cm
 	int max_steps = static_cast<int>(std::ceil(max_range / step));
 	const double PI = std::acos(-1.0);
-	// 前方 180°：从 -PI/2 到 +PI/2，分成 min_obs_dim_ 个扇区
+	// 前方 180°：从 -PI/2 到 +PI/2（逆时针，即 -y 到 +y，x 朝前 y 朝左），与训练扇区顺序一致
 	double start_angle = -PI / 2.0;
 	double sector_width = PI / static_cast<double>(min_obs_dim_);
 
@@ -470,6 +472,37 @@ std::vector<float> RLController::runModel(const std::vector<float> & input)
 	std::vector<float> result;
 	// 打开文件（追加模式）
 	std::ofstream outfile(output_model_run_file, std::ios_base::app);
+
+	// 获取当前时间戳（毫秒级精度）
+	auto now = std::chrono::system_clock::now();
+	auto duration = now.time_since_epoch();
+	auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
+	// 写入时间戳
+	outfile << "Timestamp: " << millis << std::endl;
+	
+	// 第一行：前20个值（扇区化距离）
+	outfile << "扇区观测: ";
+	for (size_t i = 0; i < 20; ++i) {
+		outfile << input[i];
+		if (i < 19)
+			outfile << ", ";
+	}
+	outfile << std::endl;
+
+	// 第二行：中间3个值（目标信息）
+	outfile << "目标信息: ";
+	// 距离、cos、sin
+	outfile << obs[20] << ", " << obs[21] << ", " << obs[22];
+	outfile << std::endl;
+	
+	// 第三行：最后2个值（动作信息）
+	outfile << "动作信息: ";
+	outfile << obs[23] << ", " << obs[24];
+	outfile << std::endl;
+	
+	// 添加分隔线
+	outfile << "----------------------------------------" << std::endl;
+	outfile.close();
 
 	try {
 		// Lazy initialize ONNX env/session if not already created
@@ -759,9 +792,10 @@ bool RLController::saveCostmapImage(const std::vector<float>& obs, int image_siz
 	
 	// 获取数据
 	std::vector<float> sector_distances(obs.begin(), obs.begin() + 20);
-	float target_cos = obs[20];
-	float target_sin = obs[21];
-	float target_distance = obs[22];
+	float target_distance = obs[20];
+	float target_cos = obs[21];
+	float target_sin = obs[22];
+	
 	
 	// 参数设置
 	int center_x = image_size / 2;

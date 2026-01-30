@@ -1,6 +1,10 @@
 """
-一次解决！SAC Actor转换脚本
-根据权重文件自动确定模型结构
+SAC Actor 转 ONNX 脚本：根据权重文件自动确定模型结构。
+
+说明：SAC Actor 的 trunk 输出 4 维（action_dim=2 时）：
+  [mu_linear, mu_angular, log_std_linear, log_std_angular]（高斯分布的均值和 log 标准差）。
+本脚本导出的是确定性策略：只取均值 mu，做 tanh(mu)，得到 2 维 [线速度, 角速度]，
+不做从高斯分布的重采样；方差/log_std 仅参与前向计算以保持权重一致，不写入 ONNX 输出。
 """
 import torch
 import torch.nn as nn
@@ -85,15 +89,15 @@ def create_model_from_weights(weights_path):
             self.log_std_bounds = [-5, 2]
 
         def forward(self, x):
-            # 前向传播
+            # 前向传播：trunk 输出 4 维 [mu_linear, mu_angular, log_std_linear, log_std_angular]
             mu, log_std = self.trunk(x).chunk(2, dim=-1)
 
-            # 约束log_std
+            # 约束 log_std（仅为保证前向图完整、权重一致，不参与导出输出）
             log_std = torch.tanh(log_std)
             log_std_min, log_std_max = self.log_std_bounds
             log_std = log_std_min + 0.5 * (log_std_max - log_std_min) * (log_std + 1)
 
-            # 返回确定性输出
+            # 部署用确定性策略：只输出 tanh(mu)，不做从高斯的重采样；输出 2 维 [线速度, 角速度]
             return torch.tanh(mu)
 
     # 创建模型实例

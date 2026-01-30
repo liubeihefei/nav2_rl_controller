@@ -99,7 +99,6 @@ protected:
 	// 扇区内射线数（默认每扇区采样 8 条射线），用于更稳健地估计最近障碍距离
 	size_t rays_per_sector_ = 8;
 
-
 	// Delay constructing Ort::Env until runModel() to avoid ABI compatibility issues during plugin configuration
 	std::unique_ptr<Ort::Env> ort_env_;
 	std::unique_ptr<Ort::Session> ort_session_;
@@ -107,13 +106,12 @@ protected:
 	// Lazy init controls for ONNX session
 	std::mutex ort_mutex_;
 	bool ort_failed_ = false; // if true, further attempts to init will be skipped
-	// Model input size expected (1275)
-	size_t model_input_size_ = 1275;
-
+	// Model input size expected
+	size_t model_input_size_ = 25;
 
 	// 外部可设置参数
-	std::string model_path_ = "";
-	double max_linear_speed_ = 0.5;
+	std::string model_path_ = "/home/unitree/nav2_gps/nav2_rl_controller/model/SAC_actor.onnx";
+	double max_linear_speed_ = 1;
 	double base_max_linear_speed_ = 0.5;
 	double max_angular_speed_ = 1.0;
 	double min_obs_distance_ = 0.2;
@@ -121,7 +119,7 @@ protected:
 	double sparse_path_distance_ = 2.5;
 	// debug模式
 	bool debug = true;
-	// 这几个并不能设置，ros2似乎不能设置 string 类型的参数
+	// 文件记录路径
 	std::string output_observations_file = "/home/unitree/nav2_gps/nav2_rl_controller/logs/observations.txt";
 	std::string output_img_file = "/home/unitree/nav2_gps/nav2_rl_controller/logs/img.jpg";
 	std::string output_compute_file = "/home/unitree/nav2_gps/nav2_rl_controller/logs/compute.txt";
