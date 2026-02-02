@@ -15,3 +15,4 @@ FollowPath:
   output_img_file: "/home/unitree/nav2_gps/nav2_rl_controller/logs/img.jpg"                    # 输出障碍地图图像的文件路径
   output_compute_file: "/home/unitree/nav2_gps/nav2_rl_controller/logs/compute.txt"            # 输出一次速度指令计算过程日志的文件路径
   output_model_run_file: "/home/unitree/nav2_gps/nav2_rl_controller/logs/model_run.txt"        # 输出一次模型推理过程日志的文件路径
+  output_path_file: "/home/unitree/nav2_gps/nav2_rl_controller/logs/path.txt"                  # 输出一次planner_server的path的文件路径

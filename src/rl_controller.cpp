@@ -95,6 +95,7 @@ void RLController::configure(
 	node->get_parameter_or("output_img_file", output_img_file, output_img_file);
 	node->get_parameter_or("output_compute_file", output_compute_file, output_compute_file);
 	node->get_parameter_or("output_model_run_file", output_model_run_file, output_model_run_file);
+	node->get_parameter_or("output_path_file", output_path_file, output_path_file);
 
 	// Configure ONNX session options; delay actual session creation until first inference
 	session_options_.SetIntraOpNumThreads(1);
@@ -154,6 +155,10 @@ void RLController::reset()
 // 获得全局规划的路径，自己不调用（官方插件也是如此）
 void RLController::setPlan(const nav_msgs::msg::Path & path)
 {
+	// 如果开了调试模式则保存路径到文件
+	if (debug)
+		savePathToFile(path);
+
 	// 获取全局规划的路径并进行稀疏化处理
 	std::lock_guard<std::mutex> lock(plan_mutex_);
 	if (path.poses.empty()) {
@@ -923,6 +928,39 @@ bool RLController::saveCostmapImage(const std::vector<float>& obs, int image_siz
 	// 保存图像
 	bool success = cv::imwrite(output_img_file, image);
 	return success;
+}
+
+// 辅助函数：将一次path保存到文本文件
+void RLController::savePathToFile(const nav_msgs::msg::Path & path) {	
+	// 打开文件（追加模式）
+	std::ofstream outfile(output_path_file, std::ios_base::app);
+	
+	if (!outfile.is_open()) {
+		// RCLCPP_WARN(this->get_logger(), "无法打开文件保存path数据");
+		return;
+	}
+	
+	// 获取当前时间戳（毫秒级精度）
+	auto now = std::chrono::system_clock::now();
+	auto duration = now.time_since_epoch();
+	auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
+	// 写入时间戳
+	outfile << "Timestamp: " << millis << std::endl;
+	
+	// 写入路径
+	outfile << "路径点: [";
+	for (size_t i = 0; i < path.poses.size(); ++i) {
+		const auto & pose = path.poses[i].pose;
+		outfile << "[" << pose.position.x << ", " << pose.position.y << "]";
+		if (i < path.poses.size() - 1)
+			outfile << ", ";
+	}
+	outfile << "]" << std::endl;
+	
+	// 添加分隔线
+	outfile << "----------------------------------------" << std::endl;
+	
+	outfile.close();
 }
 
 }  // namespace nav2_rl_controller

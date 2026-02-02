@@ -110,7 +110,7 @@ protected:
 	size_t model_input_size_ = 25;
 
 	// 外部可设置参数
-	std::string model_path_ = "/home/unitree/nav2_gps/nav2_rl_controller/model/SAC_actor.onnx";
+	std::string model_path_ = "/home/unitree/nav2_gps/nav2_rl_controller/model/baseline/SAC_actor.onnx";
 	double max_linear_speed_ = 1;
 	double base_max_linear_speed_ = 0.5;
 	double max_angular_speed_ = 1.0;
@@ -124,6 +124,7 @@ protected:
 	std::string output_img_file = "/home/unitree/nav2_gps/nav2_rl_controller/logs/img.jpg";
 	std::string output_compute_file = "/home/unitree/nav2_gps/nav2_rl_controller/logs/compute.txt";
 	std::string output_model_run_file = "/home/unitree/nav2_gps/nav2_rl_controller/logs/model_run.txt";
+	std::string output_path_file = "/home/unitree/nav2_gps/nav2_rl_controller/logs/path.txt";
 
 	// 辅助函数：从四元数计算 yaw
 	double yawFromQuat(const geometry_msgs::msg::Quaternion & q);
@@ -136,6 +137,9 @@ protected:
 	
 	// 辅助函数：调试时将障碍物距离绘制成图像并保存
 	bool saveCostmapImage(const std::vector<float>& obs, int image_size);
+	
+	// 辅助函数：调试时将path保存到文本文件
+	void savePathToFile(const nav_msgs::msg::Path & path);
 };
 
 }  // namespace nav2_rl_controller
