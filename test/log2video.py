@@ -114,7 +114,7 @@ def draw_costmap_frame(frame_data, frame_index, total_frames, frame_size=600):
     # 获取数据
     sector_distances = frame_data.get('sector_distances', [10.0] * 20)
     target_info = frame_data.get('target_info', [0.0, 0.0, 10.0])
-    target_cos, target_sin, target_distance = target_info
+    target_distance, target_cos, target_sin = target_info
     linear_vel = frame_data.get('linear_vel', 0.0)
     angular_vel = frame_data.get('angular_vel', 0.0)
 
@@ -186,8 +186,8 @@ def draw_costmap_frame(frame_data, frame_index, total_frames, frame_size=600):
     cv2.circle(frame_img, (center_x, center_y), 10, (200, 200, 200), 2)
 
     # 绘制目标点
-    target_x = target_distance * target_cos * scale_factor
-    target_y = -target_distance * target_sin * scale_factor
+    target_x = -target_distance * target_sin * scale_factor
+    target_y = -target_distance * target_cos * scale_factor
 
     target_pixel_x = int(center_x + target_x)
     target_pixel_y = int(center_y + target_y)
