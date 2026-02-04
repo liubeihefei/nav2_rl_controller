@@ -66,8 +66,14 @@ void RLController::configure(
 	node->get_parameter_or("min_obs_dim", min_obs_dim_param, min_obs_dim_param);
 	min_obs_dim_ = static_cast<size_t>(min_obs_dim_param);
 
+	// 是否使用速度
+	node->get_parameter_or("use_vel", use_vel, true);
+
 	// 计算每帧完整维度：20 雷达 + 3 目标(dist,cos,sin) + 2 上一时刻动作(linear,angular) = 25
-	obs_dim_ = static_cast<size_t>(min_obs_dim_) + 3 + 2;
+	if (!use_vel)
+		obs_dim_ = static_cast<size_t>(min_obs_dim_) + 3 + 2;
+	else
+		obs_dim_ = static_cast<size_t>(min_obs_dim_) + 3 + 2 + 2;
 	// 模型输入大小 = （历史 N 帧 + 当前 1 帧） * 每帧完整维度；baseline 无历史时 = 25
 	model_input_size_ = (history_length_ + 1) * obs_dim_;
 
@@ -252,14 +258,15 @@ geometry_msgs::msg::TwistStamped RLController::computeVelocityCommands(
 			cmd_out.twist.linear.x = lin;
 			cmd_out.twist.angular.z = ang;
 
-			// 更新上一次新速度角速度
+			// 更新上一次线速度角速度
 			last_action_.linear.x = lin;
 			last_action_.angular.z = ang;
 
-			// 将模型输出写回当前帧的最后两维，并将该帧保存到历史帧缓冲中（供后续推理使用）
+			// 将模型输出写回当前帧，并将该帧保存到历史帧缓冲中（供后续推理使用）
 			if (current_frame.size() == obs_dim_) {
-				current_frame[min_obs_dim_ + 3] = static_cast<float>(lin);
-				current_frame[min_obs_dim_ + 4] = static_cast<float>(ang);
+				// 勾吧ai写屎呢，这一帧里存的就是上一帧的速度，写集贸这次的输出
+				// current_frame[min_obs_dim_ + 3] = static_cast<float>(lin);
+				// current_frame[min_obs_dim_ + 4] = static_cast<float>(ang);
 				std::lock_guard<std::mutex> lock(history_mutex_);
 				history_frames_.push_back(current_frame);
 				while (history_frames_.size() > history_length_) history_frames_.pop_front();
@@ -290,7 +297,7 @@ geometry_msgs::msg::TwistStamped RLController::computeVelocityCommands(
 }
 
 // 组装历史观测为模型输入
-std::vector<float> RLController::assembleObservation(const geometry_msgs::msg::PoseStamped * pose, const geometry_msgs::msg::Twist * /*vel*/, std::vector<float> & current_frame_out)
+std::vector<float> RLController::assembleObservation(const geometry_msgs::msg::PoseStamped * pose, const geometry_msgs::msg::Twist * vel, std::vector<float> & current_frame_out)
 {
 	// 从 history_frames_中按照时间从旧到新取出最多 history_length_ 帧，不足则用当前帧填充
 	// 组装输入：按照时间从旧到新拼接 history_length_ 帧历史，并在最后追加当前帧
@@ -328,6 +335,12 @@ std::vector<float> RLController::assembleObservation(const geometry_msgs::msg::P
 	// last_action（使用上一轮模型输出）
 	current_frame[min_obs_dim_ + 3] = static_cast<float>(last_action_.linear.x);
 	current_frame[min_obs_dim_ + 4] = static_cast<float>(last_action_.angular.z);
+
+	// 若使用速度，则补上2维速度
+	if (use_vel) {
+		current_frame[min_obs_dim_ + 5] = static_cast<float>(vel->linear.x);
+		current_frame[min_obs_dim_ + 6] = static_cast<float>(vel->angular.z);
+	}
 
 	// debug：保存最新的一帧输入到文件和costmap图像
 	if(debug){

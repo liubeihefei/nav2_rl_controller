@@ -119,6 +119,8 @@ protected:
 	double sparse_path_distance_ = 2.5;
 	// debug模式
 	bool debug = true;
+	// 是否使用速度
+	bool use_vel = true;
 	// 文件记录路径
 	std::string output_observations_file = "/home/unitree/nav2_gps/nav2_rl_controller/logs/observations.txt";
 	std::string output_img_file = "/home/unitree/nav2_gps/nav2_rl_controller/logs/img.jpg";
