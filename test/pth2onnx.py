@@ -198,7 +198,7 @@ def simple_convert():
     print("执行最简单的一键转换...")
 
     # 假设权重文件在当前目录的上一级logs文件夹中
-    weights_path = "../model/SAC_actor.pth"
+    weights_path = "../model/SAC/SAC_actor.pth"
 
     if not os.path.exists(weights_path):
         print(f"请将权重文件放在: {weights_path}")

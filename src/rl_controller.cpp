@@ -155,10 +155,6 @@ void RLController::reset()
 // 获得全局规划的路径，自己不调用（官方插件也是如此）
 void RLController::setPlan(const nav_msgs::msg::Path & path)
 {
-	// 如果开了调试模式则保存路径到文件
-	if (debug)
-		savePathToFile(path);
-
 	// 获取全局规划的路径并进行稀疏化处理
 	std::lock_guard<std::mutex> lock(plan_mutex_);
 	if (path.poses.empty()) {
@@ -208,6 +204,10 @@ geometry_msgs::msg::TwistStamped RLController::computeVelocityCommands(
 
 	// 打开文件（追加模式）
 	std::ofstream outfile(output_compute_file, std::ios_base::app);
+
+	// 如果是调试模式，写入path和当前位置
+	if (debug)
+		savePathToFile(latest_plan_, pose, velocity);
 
 	try {
 		// 构造当前输入帧并获取完整扁平化的模型输入
@@ -477,37 +477,6 @@ std::vector<float> RLController::runModel(const std::vector<float> & input)
 	std::vector<float> result;
 	// 打开文件（追加模式）
 	std::ofstream outfile(output_model_run_file, std::ios_base::app);
-
-	// 获取当前时间戳（毫秒级精度）
-	auto now = std::chrono::system_clock::now();
-	auto duration = now.time_since_epoch();
-	auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
-	// 写入时间戳
-	outfile << "Timestamp: " << millis << std::endl;
-	
-	// 第一行：前20个值（扇区化距离）
-	outfile << "扇区观测: ";
-	for (size_t i = 0; i < 20; ++i) {
-		outfile << input[i];
-		if (i < 19)
-			outfile << ", ";
-	}
-	outfile << std::endl;
-
-	// 第二行：中间3个值（目标信息）
-	outfile << "目标信息: ";
-	// 距离、cos、sin
-	outfile << obs[20] << ", " << obs[21] << ", " << obs[22];
-	outfile << std::endl;
-	
-	// 第三行：最后2个值（动作信息）
-	outfile << "动作信息: ";
-	outfile << obs[23] << ", " << obs[24];
-	outfile << std::endl;
-	
-	// 添加分隔线
-	outfile << "----------------------------------------" << std::endl;
-	outfile.close();
 
 	try {
 		// Lazy initialize ONNX env/session if not already created
@@ -931,7 +900,7 @@ bool RLController::saveCostmapImage(const std::vector<float>& obs, int image_siz
 }
 
 // 辅助函数：将一次path保存到文本文件
-void RLController::savePathToFile(const nav_msgs::msg::Path & path) {	
+void RLController::savePathToFile(const nav_msgs::msg::Path & path, const geometry_msgs::msg::PoseStamped & pose, const geometry_msgs::msg::Twist & velocity) {	
 	// 打开文件（追加模式）
 	std::ofstream outfile(output_path_file, std::ios_base::app);
 	
@@ -956,6 +925,12 @@ void RLController::savePathToFile(const nav_msgs::msg::Path & path) {
 			outfile << ", ";
 	}
 	outfile << "]" << std::endl;
+
+	// 写入当前位置
+	outfile << "当前位置：[" << pose.pose.position.x << ", " << pose.pose.position.y << "]" << std::endl;
+
+	// 写入当前速度
+	outfile << "当前速度：[" << velocity.linear.x << ", " << velocity.angular.z << "]" << std::endl;
 	
 	// 添加分隔线
 	outfile << "----------------------------------------" << std::endl;

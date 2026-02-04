@@ -78,7 +78,7 @@ protected:
 	std::deque<std::vector<float>> history_frames_;
 
 	// 历史帧数量（不包含当前帧），默认 50；实际传入模型的帧数为 history_length_ + 1（包含当前帧）
-	size_t history_length_ = 50;
+	size_t history_length_ = 0;
 
 	// 每帧完整观测维度为 min_obs_dim_ + 3 + 2（通常为 25）
 	size_t obs_dim_ = 25;
@@ -111,9 +111,9 @@ protected:
 
 	// 外部可设置参数
 	std::string model_path_ = "/home/unitree/nav2_gps/nav2_rl_controller/model/baseline/SAC_actor.onnx";
-	double max_linear_speed_ = 1;
+	double max_linear_speed_ = 1.0;
 	double base_max_linear_speed_ = 0.5;
-	double max_angular_speed_ = 1.0;
+	double max_angular_speed_ = 0.5;
 	double min_obs_distance_ = 0.2;
 	// 路径稀疏化距离（米），每sparse_path_distance米保留一个路径点
 	double sparse_path_distance_ = 2.5;
@@ -139,7 +139,7 @@ protected:
 	bool saveCostmapImage(const std::vector<float>& obs, int image_size);
 	
 	// 辅助函数：调试时将path保存到文本文件
-	void savePathToFile(const nav_msgs::msg::Path & path);
+	void savePathToFile(const nav_msgs::msg::Path & path, const geometry_msgs::msg::PoseStamped & pose, const geometry_msgs::msg::Twist & velocity);
 };
 
 }  // namespace nav2_rl_controller
