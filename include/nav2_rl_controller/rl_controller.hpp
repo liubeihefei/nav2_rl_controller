@@ -121,6 +121,8 @@ protected:
 	bool debug = true;
 	// 是否使用速度
 	bool use_vel = true;
+	// 是否使用严格给全局路径上第一个累计距离大于阈值的点作为目标点
+	bool strict_target_selection = true;
 	// 文件记录路径
 	std::string output_observations_file = "/home/unitree/nav2_gps/nav2_rl_controller/logs/observations.txt";
 	std::string output_img_file = "/home/unitree/nav2_gps/nav2_rl_controller/logs/img.jpg";

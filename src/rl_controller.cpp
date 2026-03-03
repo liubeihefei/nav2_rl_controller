@@ -96,6 +96,9 @@ void RLController::configure(
 	// debug模式
 	node->get_parameter_or("debug", debug, true);
 
+	// 是否使用严格给全局路径上第一个累计距离大于阈值的点作为目标点
+	node->get_parameter_or("strict_target_selection", strict_target_selection, true);
+
 	// 日志保存路径
 	node->get_parameter_or("output_observations_file", output_observations_file, output_observations_file);
 	node->get_parameter_or("output_img_file", output_img_file, output_img_file);
@@ -637,6 +640,27 @@ std::tuple<double,double,double> RLController::computeTargetFromPlan(const geome
 		return {0.0, 0.0, 0.0};
 	}
 
+	// 如果取索引最近的点
+	if (strict_target_selection)
+	{
+		auto &tp = latest_plan_.poses[0].pose;
+		// 若有两个点及以上，返回第二个点，即全局路径中按索引第一个距离大于阈值的点
+		if (latest_plan_.poses.size() >= 2) {
+			tp = latest_plan_.poses[1].pose;
+		}
+		double dx = tp.position.x - cx;
+		double dy = tp.position.y - cy;
+		double dist = std::hypot(dx, dy);
+		double yaw = yawFromQuat(current_pose.pose.orientation);
+		double angle_to_target = std::atan2(dy, dx) - yaw;
+		const double PI = std::acos(-1.0);
+		while (angle_to_target > PI) angle_to_target -= 2.0 * PI;
+		while (angle_to_target < -PI) angle_to_target += 2.0 * PI;
+		double tcos = std::cos(angle_to_target);
+		double tsin = std::sin(angle_to_target);
+		return {tcos, tsin, dist};
+	}
+
 	// 找到距离当前位姿最近的路径点的索引（还有一种写法是到路径中索引最近的点，但这里先直接找最近点）
 	double best_dist = std::numeric_limits<double>::infinity();
 	size_t best_idx = 0;
@@ -692,18 +716,21 @@ nav_msgs::msg::Path RLController::sparsePath(const nav_msgs::msg::Path & path, d
 	
 	// 从第一个点开始，累积距离，当距离超过阈值时保留该点
 	size_t last_kept_idx = 0;
+	double accumulated_distance = 0.0;
 	for (size_t i = 1; i < path.poses.size(); ++i) {
-		const auto &last_pose = path.poses[last_kept_idx].pose;
+		const auto &last_pose = path.poses[i - 1].pose;
 		const auto &current_pose = path.poses[i].pose;
 		
 		double dx = current_pose.position.x - last_pose.position.x;
 		double dy = current_pose.position.y - last_pose.position.y;
 		double distance = std::hypot(dx, dy);
+		accumulated_distance += distance;
 		
 		// 如果距离超过阈值，保留当前点
-		if (distance >= distance_threshold) {
+		if (accumulated_distance >= distance_threshold) {
 			sparse_path.poses.push_back(path.poses[i]);
 			last_kept_idx = i;
+			accumulated_distance = 0.0;  // 重置累积距离
 		}
 	}
 	
