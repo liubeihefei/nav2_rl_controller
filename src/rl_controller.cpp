@@ -214,14 +214,18 @@ geometry_msgs::msg::TwistStamped RLController::computeVelocityCommands(
 	// 打开文件（追加模式）
 	std::ofstream outfile(output_compute_file, std::ios_base::app);
 
-	// 如果是调试模式，写入path和当前位置
-	if (debug)
-		savePathToFile(latest_plan_, pose, velocity);
+	// // 如果是调试模式，写入path和当前位置
+	// if (debug)
+	// 	savePathToFile(latest_plan_, pose, velocity);
 
 	try {
 		// 构造当前输入帧并获取完整扁平化的模型输入
 		std::vector<float> current_frame;
 		std::vector<float> input = assembleObservation(&pose, &velocity, current_frame);
+
+		// 写入观察数据，包括雷达扇区距离、目标信息、上一次动作、路径、当前位置、当前速度
+
+
 		// 注意：assembleObservation现在总是返回有效输入（历史不足时用零填充），不再返回空向量
 		if (input.size() != model_input_size_) {
 			if (node)
@@ -347,7 +351,7 @@ std::vector<float> RLController::assembleObservation(const geometry_msgs::msg::P
 
 	// debug：保存最新的一帧输入到文件和costmap图像
 	if(debug){
-		saveObservationToFile(current_frame);
+		saveObservationToFile(current_frame, latest_plan_, pose, vel);
 		saveCostmapImage(current_frame, 600);
 	}
 
@@ -745,7 +749,7 @@ nav_msgs::msg::Path RLController::sparsePath(const nav_msgs::msg::Path & path, d
 }
 
 // 辅助函数：将一帧观测保存到文本文件
-void RLController::saveObservationToFile(const std::vector<float>& obs) {
+void RLController::saveObservationToFile(const std::vector<float>& obs, const nav_msgs::msg::Path & path, const geometry_msgs::msg::PoseStamped & pose, const geometry_msgs::msg::Twist & velocity) {
 	// 确保有足够的维度
 	if (obs.size() < 25) return;
 	
@@ -783,6 +787,29 @@ void RLController::saveObservationToFile(const std::vector<float>& obs) {
 	outfile << "动作信息: ";
 	outfile << obs[23] << ", " << obs[24];
 	outfile << std::endl;
+
+	// 写入路径
+	outfile << "路径点: [";
+	for (size_t i = 0; i < path.poses.size(); ++i) {
+		const auto & pose = path.poses[i].pose;
+		outfile << "[" << pose.position.x << ", " << pose.position.y << "]";
+		if (i < path.poses.size() - 1)
+			outfile << ", ";
+	}
+	outfile << "]" << std::endl;
+
+	// 写入当前位置
+	outfile << "当前位置：[" << pose.pose.position.x << ", " << pose.pose.position.y << "]" << std::endl;
+
+	// 写入当前朝向
+	outfile << "当前朝向：[" 
+        << pose.pose.orientation.x << ", "
+        << pose.pose.orientation.y << ", "
+        << pose.pose.orientation.z << ", "
+        << pose.pose.orientation.w << "]" << std::endl;
+
+	// 写入当前速度
+	outfile << "当前速度：[" << velocity.linear.x << ", " << velocity.angular.z << "]" << std::endl;
 	
 	// 添加分隔线
 	outfile << "----------------------------------------" << std::endl;

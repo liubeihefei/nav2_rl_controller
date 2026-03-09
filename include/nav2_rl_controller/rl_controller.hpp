@@ -71,20 +71,10 @@ protected:
 	std::shared_ptr<nav2_costmap_2d::Costmap2DROS> costmap_ros_;
 	nav2_costmap_2d::Costmap2D * costmap_ = nullptr;
 
-
 	std::mutex history_mutex_;
 	// 历史帧缓冲：保存已形成的完整帧（每帧 25 维：20 obs_min + 3 target + 2 last_action）
 	// 内容由 computeVelocityCommands 在推理后加入（推理完成后会把模型输出回写到帧的最后两维）
 	std::deque<std::vector<float>> history_frames_;
-
-	// 历史帧数量（不包含当前帧），默认 50；实际传入模型的帧数为 history_length_ + 1（包含当前帧）
-	size_t history_length_ = 0;
-
-	// 每帧完整观测维度为 min_obs_dim_ + 3 + 2（通常为 25）
-	size_t obs_dim_ = 25;
-
-	// obs_min 的维度（默认 20）
-	size_t min_obs_dim_ = 20;
 
 	// 保存模型上一次输出（linear, angular）用于构造当前帧的最后两维
 	geometry_msgs::msg::Twist last_action_;
@@ -96,9 +86,6 @@ protected:
 	std::mutex plan_mutex_;
 	bool have_plan_ = false;
 
-	// 扇区内射线数（默认每扇区采样 8 条射线），用于更稳健地估计最近障碍距离
-	size_t rays_per_sector_ = 8;
-
 	// Delay constructing Ort::Env until runModel() to avoid ABI compatibility issues during plugin configuration
 	std::unique_ptr<Ort::Env> ort_env_;
 	std::unique_ptr<Ort::Session> ort_session_;
@@ -106,10 +93,20 @@ protected:
 	// Lazy init controls for ONNX session
 	std::mutex ort_mutex_;
 	bool ort_failed_ = false; // if true, further attempts to init will be skipped
-	// Model input size expected
-	size_t model_input_size_ = 25;
+	
 
 	// 外部可设置参数
+	// 扇区内射线数（默认每扇区采样 8 条射线），用于更稳健地估计最近障碍距离
+	size_t rays_per_sector_ = 8;
+	// 历史帧数量（不包含当前帧），实际传入模型的帧数为 history_length_ + 1
+	size_t history_length_ = 0;
+	// 每帧完整观测维度为 min_obs_dim_ + 3 + 2（通常为 25）
+	size_t obs_dim_ = 25;
+	// obs_min 的维度（默认 20）
+	size_t min_obs_dim_ = 20;
+	// Model input size expected
+	size_t model_input_size_ = 25;
+	// 模型路径
 	std::string model_path_ = "/home/unitree/nav2_gps/nav2_rl_controller/model/baseline/SAC_actor.onnx";
 	double max_linear_speed_ = 1.0;
 	double base_max_linear_speed_ = 0.5;
@@ -130,6 +127,7 @@ protected:
 	std::string output_model_run_file = "/home/unitree/nav2_gps/nav2_rl_controller/logs/model_run.txt";
 	std::string output_path_file = "/home/unitree/nav2_gps/nav2_rl_controller/logs/path.txt";
 
+	
 	// 辅助函数：从四元数计算 yaw
 	double yawFromQuat(const geometry_msgs::msg::Quaternion & q);
 
@@ -137,7 +135,7 @@ protected:
 	nav_msgs::msg::Path sparsePath(const nav_msgs::msg::Path & path, double distance_threshold);
 
 	// 辅助函数：调试时将观测保存到文件
-	void saveObservationToFile(const std::vector<float>& obs);
+	void saveObservationToFile(const std::vector<float>& obs, const nav_msgs::msg::Path & path, const geometry_msgs::msg::PoseStamped & pose, const geometry_msgs::msg::Twist & velocity);
 	
 	// 辅助函数：调试时将障碍物距离绘制成图像并保存
 	bool saveCostmapImage(const std::vector<float>& obs, int image_size);
