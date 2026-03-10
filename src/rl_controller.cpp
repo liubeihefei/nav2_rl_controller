@@ -828,6 +828,8 @@ void RLController::saveObservationToFile(const std::vector<float>& obs, const na
 
 	// 写入当前位置
 	outfile << "当前位置：[" << pose.pose.position.x << ", " << pose.pose.position.y << "]" << std::endl;
+	// 写入当前坐标系
+	outfile << "当前坐标系：" << pose.header.frame_id << std::endl;
 	// 写入当前朝向
 	outfile << "当前朝向：["
         << pose.pose.orientation.x << ", "
@@ -837,6 +839,7 @@ void RLController::saveObservationToFile(const std::vector<float>& obs, const na
 
 	pose_map = transformPoseToMap(pose);
 	outfile << "转换到map下的位置：[" << pose_map.pose.position.x << ", " << pose_map.pose.position.y << "]" << std::endl;
+	outfile << "转换到map下的坐标系：" << pose_map.header.frame_id << std::endl;
 	outfile << "转换到map下的朝向：["
         << pose_map.pose.orientation.x << ", "
         << pose_map.pose.orientation.y << ", "
