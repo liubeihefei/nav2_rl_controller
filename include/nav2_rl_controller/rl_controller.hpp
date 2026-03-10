@@ -109,8 +109,8 @@ protected:
 	// 模型路径
 	std::string model_path_ = "/home/unitree/nav2_gps/nav2_rl_controller/model/baseline/SAC_actor.onnx";
 	double max_linear_speed_ = 1.0;
-	double base_max_linear_speed_ = 0.5;
-	double max_angular_speed_ = 0.5;
+	double base_max_linear_speed_ = 1.0;
+	double max_angular_speed_ = 1.0;
 	double min_obs_distance_ = 0.2;
 	// 路径稀疏化距离（米），每sparse_path_distance米保留一个路径点
 	double sparse_path_distance_ = 2.5;

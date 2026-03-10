@@ -4,7 +4,7 @@ import numpy as np
 import cv2
 import matplotlib.pyplot as plt
 
-LOG_FILE = 'D://Projects//nav2_rl_controller//logs//logs3//observations.txt'
+LOG_FILE = 'D://Projects//nav2_rl_controller//logs//logs666//observations.txt'
 VIDEO_OUT = "result.mp4"
 
 history_obstacles = []
@@ -112,7 +112,8 @@ def parse_log(file):
 def lidar_points(frame):
 
     px_o, py_o = frame["pos"]
-    px, py = odom_to_map(px_o, py_o, frame["tf_trans"])
+    # px, py = odom_to_map(px_o, py_o, frame["tf_trans"])
+    px, py = px_o, py_o
 
     yaw = quat_to_yaw(frame["quat"])
 
@@ -168,7 +169,8 @@ def draw_frame(frame):
     global start_time
 
     px_o, py_o = frame["pos"]
-    px, py = odom_to_map(px_o, py_o, frame["tf_trans"])
+    # px, py = odom_to_map(px_o, py_o, frame["tf_trans"])
+    px, py = px_o, py_o
 
     yaw = quat_to_yaw(frame["quat"])
 

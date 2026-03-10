@@ -97,7 +97,7 @@ void RLController::configure(
 	node->get_parameter_or("debug", debug, true);
 
 	// 是否使用严格给全局路径上第一个累计距离大于阈值的点作为目标点
-	node->get_parameter_or("strict_target_selection", strict_target_selection, true);
+	node->get_parameter_or("strict_target_selection", strict_target_selection, false);
 
 	// 日志保存路径
 	node->get_parameter_or("output_observations_file", output_observations_file, output_observations_file);
@@ -171,14 +171,14 @@ void RLController::setPlan(const nav_msgs::msg::Path & path)
 		have_plan_ = false;
 		return;
 	}
-	
+
 	// 对路径进行稀疏化处理
 	latest_plan_ = sparsePath(path, sparse_path_distance_);
 	have_plan_ = !latest_plan_.poses.empty();
-	
+
 	auto node = node_.lock();
 	if (node) {
-		RCLCPP_DEBUG(node->get_logger(), "Path sparsified: %zu -> %zu poses (distance threshold: %.2f m)", 
+		RCLCPP_DEBUG(node->get_logger(), "Path sparsified: %zu -> %zu poses (distance threshold: %.2f m)",
 					path.poses.size(), latest_plan_.poses.size(), sparse_path_distance_);
 	}
 }
@@ -219,12 +219,12 @@ geometry_msgs::msg::TwistStamped RLController::computeVelocityCommands(
 	// 	savePathToFile(latest_plan_, pose, velocity);
 
 	// 将odom下的机器人pose转换到map坐标系下
-	geometry_msgs::msg::PoseStamped pose_map = transformPoseToMap(pose);
+	// geometry_msgs::msg::PoseStamped pose_map = transformPoseToMap(pose);	
 
 	try {
 		// 构造当前输入帧并获取完整扁平化的模型输入
 		std::vector<float> current_frame;
-		std::vector<float> input = assembleObservation(&pose_map, &velocity, current_frame);
+		std::vector<float> input = assembleObservation(&pose, &velocity, current_frame);
 
 		// 注意：assembleObservation现在总是返回有效输入（历史不足时用零填充），不再返回空向量
 		if (input.size() != model_input_size_) {
@@ -239,7 +239,7 @@ geometry_msgs::msg::TwistStamped RLController::computeVelocityCommands(
 
 		// 推理获得结果
 		std::vector<float> output = runModel(input);
-		
+
 		if (output.size() >= 2) {
 			double lin = output[0];
 			double ang = output[1];
@@ -260,7 +260,7 @@ geometry_msgs::msg::TwistStamped RLController::computeVelocityCommands(
 			if (lin < 0.0) {
 				lin = 0.0;
 			}
-			
+
 			// 一切ok则准备发送线速度角速度
 			cmd_out.twist.linear.x = lin;
 			cmd_out.twist.angular.z = ang;
@@ -424,7 +424,8 @@ std::vector<float> RLController::computeObsFromCostmap(const geometry_msgs::msg:
 		return obs;
 	}
 
-	const double max_range = 10.0; // 最大探测范围（米）
+	// const double max_range = 10.0; // 最大探测范围（米）
+	const double max_range = 7.0; // 最大探测范围（米）
 	double cx = pose->pose.position.x;
 	double cy = pose->pose.position.y;
 	double yaw = yawFromQuat(pose->pose.orientation);
@@ -633,7 +634,7 @@ std::vector<float> RLController::runModel(const std::vector<float> & input)
 		outfile.close();
 		return result;
 	}
-} 
+}
 
 // 计算到目标点的sin、cos、distance
 std::tuple<double,double,double> RLController::computeTargetFromPlan(const geometry_msgs::msg::PoseStamped & current_pose)
@@ -644,6 +645,9 @@ std::tuple<double,double,double> RLController::computeTargetFromPlan(const geome
 		return {0.0, 0.0, 0.0};
 	}
 
+	// 将当前位置转换到 map 坐标系下
+	geometry_msgs::msg::PoseStamped pose_map = transformPoseToMap(current_pose);
+
 	// 如果取索引最近的点
 	if (strict_target_selection)
 	{
@@ -652,10 +656,12 @@ std::tuple<double,double,double> RLController::computeTargetFromPlan(const geome
 		if (latest_plan_.poses.size() >= 2) {
 			tp = latest_plan_.poses[1].pose;
 		}
+		double cx = pose_map.pose.position.x;
+		double cy = pose_map.pose.position.y;
 		double dx = tp.position.x - cx;
 		double dy = tp.position.y - cy;
 		double dist = std::hypot(dx, dy);
-		double yaw = yawFromQuat(current_pose.pose.orientation);
+		double yaw = yawFromQuat(pose_map.pose.orientation);
 		double angle_to_target = std::atan2(dy, dx) - yaw;
 		const double PI = std::acos(-1.0);
 		while (angle_to_target > PI) angle_to_target -= 2.0 * PI;
@@ -668,8 +674,8 @@ std::tuple<double,double,double> RLController::computeTargetFromPlan(const geome
 	// 找到距离当前位姿最近的路径点的索引（还有一种写法是到路径中索引最近的点，但这里先直接找最近点）
 	double best_dist = std::numeric_limits<double>::infinity();
 	size_t best_idx = 0;
-	double cx = current_pose.pose.position.x;
-	double cy = current_pose.pose.position.y;
+	double cx = pose_map.pose.position.x;
+	double cy = pose_map.pose.position.y;
 	for (size_t i = 0; i < latest_plan_.poses.size(); ++i) {
 		double dx = latest_plan_.poses[i].pose.position.x - cx;
 		double dy = latest_plan_.poses[i].pose.position.y - cy;
@@ -683,7 +689,7 @@ std::tuple<double,double,double> RLController::computeTargetFromPlan(const geome
 	double dx = tp.position.x - cx;
 	double dy = tp.position.y - cy;
 	double dist = std::hypot(dx, dy);
-	double yaw = yawFromQuat(current_pose.pose.orientation);
+	double yaw = yawFromQuat(pose_map.pose.orientation);
 	double angle_to_target = std::atan2(dy, dx) - yaw;
 	const double PI = std::acos(-1.0);
 	while (angle_to_target > PI) angle_to_target -= 2.0 * PI;
@@ -706,30 +712,30 @@ nav_msgs::msg::Path RLController::sparsePath(const nav_msgs::msg::Path & path, d
 {
 	nav_msgs::msg::Path sparse_path;
 	sparse_path.header = path.header;
-	
+
 	if (path.poses.empty()) {
 		return sparse_path;
 	}
-	
+
 	// 总是保留第一个点
 	sparse_path.poses.push_back(path.poses[0]);
-	
+
 	if (path.poses.size() == 1) {
 		return sparse_path;
 	}
-	
+
 	// 从第一个点开始，累积距离，当距离超过阈值时保留该点
 	size_t last_kept_idx = 0;
 	double accumulated_distance = 0.0;
 	for (size_t i = 1; i < path.poses.size(); ++i) {
 		const auto &last_pose = path.poses[i - 1].pose;
 		const auto &current_pose = path.poses[i].pose;
-		
+
 		double dx = current_pose.position.x - last_pose.position.x;
 		double dy = current_pose.position.y - last_pose.position.y;
 		double distance = std::hypot(dx, dy);
 		accumulated_distance += distance;
-		
+
 		// 如果距离超过阈值，保留当前点
 		if (accumulated_distance >= distance_threshold) {
 			sparse_path.poses.push_back(path.poses[i]);
@@ -737,14 +743,14 @@ nav_msgs::msg::Path RLController::sparsePath(const nav_msgs::msg::Path & path, d
 			accumulated_distance = 0.0;  // 重置累积距离
 		}
 	}
-	
+
 	// 总是保留最后一个点（即使距离不够）
-	if (sparse_path.poses.empty() || 
+	if (sparse_path.poses.empty() ||
 		sparse_path.poses.back().pose.position.x != path.poses.back().pose.position.x ||
 		sparse_path.poses.back().pose.position.y != path.poses.back().pose.position.y) {
 		sparse_path.poses.push_back(path.poses.back());
 	}
-	
+
 	return sparse_path;
 }
 
@@ -752,22 +758,44 @@ nav_msgs::msg::Path RLController::sparsePath(const nav_msgs::msg::Path & path, d
 void RLController::saveObservationToFile(const std::vector<float>& obs, const nav_msgs::msg::Path & path, const geometry_msgs::msg::PoseStamped & pose, const geometry_msgs::msg::Twist & velocity) {
 	// 确保有足够的维度
 	if (obs.size() < 25) return;
-	
+
 	// 打开文件（追加模式）
 	std::ofstream outfile(output_observations_file, std::ios_base::app);
-	
+
 	if (!outfile.is_open()) {
 		// RCLCPP_WARN(this->get_logger(), "无法打开文件保存观测数据");
 		return;
 	}
-	
+
 	// 获取当前时间戳（毫秒级精度）
 	auto now = std::chrono::system_clock::now();
 	auto duration = now.time_since_epoch();
 	auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
 	// 写入时间戳
 	outfile << "Timestamp: " << millis << std::endl;
-	
+
+	// 查询 map->odom TF
+    try
+    {
+        geometry_msgs::msg::TransformStamped tf_map_odom =
+            tf_->lookupTransform("map", "odom", tf2::TimePointZero);
+
+        outfile << "map->odom translation: ["
+                << tf_map_odom.transform.translation.x << ", "
+                << tf_map_odom.transform.translation.y << ", "
+                << tf_map_odom.transform.translation.z << "]" << std::endl;
+
+        outfile << "map->odom rotation: ["
+                << tf_map_odom.transform.rotation.x << ", "
+                << tf_map_odom.transform.rotation.y << ", "
+                << tf_map_odom.transform.rotation.z << ", "
+                << tf_map_odom.transform.rotation.w << "]" << std::endl;
+    }
+    catch (tf2::TransformException & ex)
+    {
+        outfile << "map->odom TF lookup failed: " << ex.what() << std::endl;
+    }
+
 	// 第一行：前20个值（扇区化距离）
 	outfile << "扇区观测: ";
 	for (size_t i = 0; i < 20; ++i) {
@@ -776,13 +804,13 @@ void RLController::saveObservationToFile(const std::vector<float>& obs, const na
 			outfile << ", ";
 	}
 	outfile << std::endl;
-	
+
 	// 第二行：中间3个值（目标信息）
 	outfile << "目标信息: ";
 	// 距离、cos、sin
 	outfile << obs[20] << ", " << obs[21] << ", " << obs[22];
 	outfile << std::endl;
-	
+
 	// 第三行：最后2个值（动作信息）
 	outfile << "动作信息: ";
 	outfile << obs[23] << ", " << obs[24];
@@ -800,20 +828,27 @@ void RLController::saveObservationToFile(const std::vector<float>& obs, const na
 
 	// 写入当前位置
 	outfile << "当前位置：[" << pose.pose.position.x << ", " << pose.pose.position.y << "]" << std::endl;
-
 	// 写入当前朝向
-	outfile << "当前朝向：[" 
+	outfile << "当前朝向：["
         << pose.pose.orientation.x << ", "
         << pose.pose.orientation.y << ", "
         << pose.pose.orientation.z << ", "
         << pose.pose.orientation.w << "]" << std::endl;
 
+	pose_map = transformPoseToMap(pose);
+	outfile << "转换到map下的位置：[" << pose_map.pose.position.x << ", " << pose_map.pose.position.y << "]" << std::endl;
+	outfile << "转换到map下的朝向：["
+        << pose_map.pose.orientation.x << ", "
+        << pose_map.pose.orientation.y << ", "
+        << pose_map.pose.orientation.z << ", "
+        << pose_map.pose.orientation.w << "]" << std::endl;
+	
 	// 写入当前速度
 	outfile << "当前速度：[" << velocity.linear.x << ", " << velocity.angular.z << "]" << std::endl;
-	
+
 	// 添加分隔线
 	outfile << "----------------------------------------" << std::endl;
-	
+
 	outfile.close();
 }
 
@@ -825,45 +860,45 @@ bool RLController::saveCostmapImage(const std::vector<float>& obs, int image_siz
 	}
 
 	image_size = 600;
-	
+
 	// 创建画布
 	cv::Mat image = cv::Mat::zeros(image_size, image_size, CV_8UC3);
 	cv::Scalar background_color(255, 255, 255);  // 白色背景
 	image = background_color;
-	
+
 	// 获取数据
 	std::vector<float> sector_distances(obs.begin(), obs.begin() + 20);
 	float target_distance = obs[20];
 	float target_cos = obs[21];
 	float target_sin = obs[22];
-	
-	
+
+
 	// 参数设置
 	int center_x = image_size / 2;
 	int center_y = image_size / 2;
 	int num_sectors = 20;
 	double sector_angle = M_PI / num_sectors;  // 每个扇区 9 度
-	
+
 	// 计算最大距离用于缩放
 	float max_distance = 0.0f;
 	for (float dist : sector_distances) {
 		if (dist > max_distance) max_distance = dist;
 	}
 	if (max_distance < 1e-6) max_distance = 1.0f;
-	
+
 	// 缩放因子：将实际距离映射到图像像素
 	float scale_factor = (image_size / 2.2f) / max_distance;  // 留一些边距
-	
+
 	// 绘制坐标轴
 	cv::line(image, cv::Point(center_x, 0), cv::Point(center_x, image_size), cv::Scalar(200, 200, 200), 1);
 	cv::line(image, cv::Point(0, center_y), cv::Point(image_size, center_y), cv::Scalar(200, 200, 200), 1);
-	
+
 	// 绘制距离环
 	for (int i = 1; i <= 5; i++) {
 		float radius = (max_distance * i / 5.0f) * scale_factor;
 		cv::circle(image, cv::Point(center_x, center_y), radius, cv::Scalar(220, 220, 220), 1);
 	}
-	
+
 	// 绘制扇区（障碍物距离）
 	// 注意：obs 中的障碍物距离是逆时针存储的（从 y 轴负方向到 y 轴正方向）
 	// 对应角度：-90° 到 +90°，其中 -90° = y轴负方向，0° = x轴正方向，+90° = y轴正方向
@@ -873,25 +908,25 @@ bool RLController::saveCostmapImage(const std::vector<float>& obs, int image_siz
 		double start_angle = -M_PI_2 + i * sector_angle;
 		double end_angle = start_angle + sector_angle;
 		double center_angle = start_angle + sector_angle / 2.0;
-		
+
 		// 获取该扇区的距离
 		float distance = sector_distances[i];
 		if (distance < 1e-6) continue;  // 无有效数据
-		
+
 		// 转换为像素坐标
 		float pixel_distance = distance * scale_factor;
-		
+
 		// 扇区起始和结束点
 		float start_x = center_x + pixel_distance * cos(start_angle);
 		float start_y = center_y - pixel_distance * sin(start_angle);  // 注意：图像y轴向下
-		
+
 		float end_x = center_x + pixel_distance * cos(end_angle);
 		float end_y = center_y - pixel_distance * sin(end_angle);
-		
+
 		// 绘制扇区的弧线
 		std::vector<cv::Point> sector_points;
 		sector_points.push_back(cv::Point(center_x, center_y));
-		
+
 		// 生成弧线上的点
 		int num_points = 20;
 		for (int j = 0; j <= num_points; j++) {
@@ -900,53 +935,53 @@ bool RLController::saveCostmapImage(const std::vector<float>& obs, int image_siz
 			float y = center_y - pixel_distance * sin(angle);
 			sector_points.push_back(cv::Point(x, y));
 		}
-		
+
 		sector_points.push_back(cv::Point(center_x, center_y));
-		
+
 		// 填充扇区（使用半透明颜色）
 		cv::Mat overlay = image.clone();
 		cv::fillPoly(overlay, std::vector<std::vector<cv::Point>>{sector_points}, cv::Scalar(173, 216, 230), cv::LINE_AA);  // 浅蓝色
-		
+
 		// 添加透明度
 		double alpha = 0.3;
 		cv::addWeighted(overlay, alpha, image, 1 - alpha, 0, image);
-		
+
 		// 绘制扇区边界线
 		cv::line(image, cv::Point(center_x, center_y), cv::Point(start_x, start_y), cv::Scalar(100, 100, 100), 1);
 		cv::line(image, cv::Point(center_x, center_y), cv::Point(end_x, end_y), cv::Scalar(100, 100, 100), 1);
-		
+
 		// 在扇区中心显示距离值
 		float text_x = center_x + pixel_distance * 0.7 * cos(center_angle);
 		float text_y = center_y - pixel_distance * 0.7 * sin(center_angle);
-		
+
 		std::stringstream dist_ss;
 		dist_ss << std::fixed << std::setprecision(1) << distance;
 		cv::putText(image, dist_ss.str(), cv::Point(text_x, text_y), cv::FONT_HERSHEY_SIMPLEX, 0.3, cv::Scalar(0, 0, 0), 1);
 	}
-	
+
 	// 绘制目标点
 	// 目标点的方位角：atan2(target_sin, target_cos)
 	float target_angle = atan2(target_sin, target_cos);
 	float target_pixel_distance = target_distance * scale_factor;
-	
+
 	float target_x = center_x + target_pixel_distance * cos(target_angle);
 	float target_y = center_y - target_pixel_distance * sin(target_angle);  // 图像y轴向下
-	
+
 	// 绘制目标点（红色三角形）
 	cv::drawMarker(image, cv::Point(target_x, target_y), cv::Scalar(0, 0, 255), cv::MARKER_TRIANGLE_UP, 20, 2);
-	
+
 	// 绘制目标点连线
 	cv::line(image, cv::Point(center_x, center_y), cv::Point(target_x, target_y), cv::Scalar(0, 0, 255), 2, cv::LINE_AA);
-	
+
 	// 绘制机器人（中心点）
 	cv::circle(image, cv::Point(center_x, center_y), 10, cv::Scalar(0, 0, 0), -1);  // 黑色实心圆
 	cv::circle(image, cv::Point(center_x, center_y), 10, cv::Scalar(255, 255, 255), 1);  // 白色边框
-	
+
 	// 绘制方向指示（前方）
 	cv::arrowedLine(image, cv::Point(center_x, center_y),
 					cv::Point(center_x + 30, center_y),
 					cv::Scalar(0, 100, 0), 2, cv::LINE_AA, 0, 0.3);
-	
+
 	// 添加文字说明
 	cv::putText(image, "Robot", cv::Point(center_x - 20, center_y - 15),
 				cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 0, 0), 1);
@@ -954,35 +989,35 @@ bool RLController::saveCostmapImage(const std::vector<float>& obs, int image_siz
 				cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 0, 255), 1);
 	cv::putText(image, "Forward (X+)", cv::Point(center_x + 40, center_y - 10),
 				cv::FONT_HERSHEY_SIMPLEX, 0.4, cv::Scalar(0, 100, 0), 1);
-	
+
 	// 添加坐标轴标签
 	cv::putText(image, "Y-", cv::Point(center_x + 5, image_size - 10),
 				cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 0, 0), 1);
 	cv::putText(image, "Y+", cv::Point(center_x + 5, 20),
 				cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 0, 0), 1);
-	
+
 	// 保存图像
 	bool success = cv::imwrite(output_img_file, image);
 	return success;
 }
 
 // 辅助函数：将一次path保存到文本文件
-void RLController::savePathToFile(const nav_msgs::msg::Path & path, const geometry_msgs::msg::PoseStamped & pose, const geometry_msgs::msg::Twist & velocity) {	
+void RLController::savePathToFile(const nav_msgs::msg::Path & path, const geometry_msgs::msg::PoseStamped & pose, const geometry_msgs::msg::Twist & velocity) {
 	// 打开文件（追加模式）
 	std::ofstream outfile(output_path_file, std::ios_base::app);
-	
+
 	if (!outfile.is_open()) {
 		// RCLCPP_WARN(this->get_logger(), "无法打开文件保存path数据");
 		return;
 	}
-	
+
 	// 获取当前时间戳（毫秒级精度）
 	auto now = std::chrono::system_clock::now();
 	auto duration = now.time_since_epoch();
 	auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
 	// 写入时间戳
 	outfile << "Timestamp: " << millis << std::endl;
-	
+
 	// 写入路径
 	outfile << "路径点: [";
 	for (size_t i = 0; i < path.poses.size(); ++i) {
@@ -998,10 +1033,10 @@ void RLController::savePathToFile(const nav_msgs::msg::Path & path, const geomet
 
 	// 写入当前速度
 	outfile << "当前速度：[" << velocity.linear.x << ", " << velocity.angular.z << "]" << std::endl;
-	
+
 	// 添加分隔线
 	outfile << "----------------------------------------" << std::endl;
-	
+
 	outfile.close();
 }
 
@@ -1023,7 +1058,7 @@ geometry_msgs::msg::PoseStamped RLController::transformPoseToMap(const geometry_
             RCLCPP_WARN(node->get_logger(),
                 "Pose transform failed: %s", ex.what());
         }
-        return pose; // fallback
+        return pose_map; // fallback
     }
 
     return pose_map;
