@@ -67,7 +67,7 @@ void RLController::configure(
 	min_obs_dim_ = static_cast<size_t>(min_obs_dim_param);
 
 	// 是否使用速度
-	node->get_parameter_or("use_vel", use_vel, true);
+	node->get_parameter_or("use_vel", use_vel, false);
 
 	// 计算每帧完整维度：20 雷达 + 3 目标(dist,cos,sin) + 2 上一时刻动作(linear,angular) = 25
 	if (!use_vel)
@@ -351,7 +351,7 @@ std::vector<float> RLController::assembleObservation(const geometry_msgs::msg::P
 
 	// debug：保存最新的一帧输入到文件和costmap图像
 	if(debug){
-		saveObservationToFile(current_frame, latest_plan_, pose, vel);
+		saveObservationToFile(current_frame, latest_plan_, * pose, * vel);
 		saveCostmapImage(current_frame, 600);
 	}
 

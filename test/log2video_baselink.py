@@ -316,11 +316,11 @@ def main():
     # 简单参数设置
     log_file = input("日志文件路径 [默认: observations.txt]: ").strip()
     if not log_file:
-        log_file = "../logs/observations.txt"
+        log_file = "./logs/logs4/observations.txt"
 
     output_video = input("输出视频 [默认: costmap.mp4]: ").strip()
     if not output_video:
-        output_video = "../logs/costmap.mp4"
+        output_video = "./logs/costmap.mp4"
 
     # 自动处理
     create_costmap_video(log_file, output_video, fps=10, max_frames=10000)
