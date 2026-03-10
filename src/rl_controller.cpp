@@ -218,13 +218,13 @@ geometry_msgs::msg::TwistStamped RLController::computeVelocityCommands(
 	// if (debug)
 	// 	savePathToFile(latest_plan_, pose, velocity);
 
+	// 将odom下的机器人pose转换到map坐标系下
+	geometry_msgs::msg::PoseStamped pose_map = transformPoseToMap(pose);
+
 	try {
 		// 构造当前输入帧并获取完整扁平化的模型输入
 		std::vector<float> current_frame;
-		std::vector<float> input = assembleObservation(&pose, &velocity, current_frame);
-
-		// 写入观察数据，包括雷达扇区距离、目标信息、上一次动作、路径、当前位置、当前速度
-
+		std::vector<float> input = assembleObservation(&pose_map, &velocity, current_frame);
 
 		// 注意：assembleObservation现在总是返回有效输入（历史不足时用零填充），不再返回空向量
 		if (input.size() != model_input_size_) {
@@ -1005,6 +1005,29 @@ void RLController::savePathToFile(const nav_msgs::msg::Path & path, const geomet
 	outfile.close();
 }
 
+// 将odom下的机器人坐标转换到map坐标系下
+geometry_msgs::msg::PoseStamped RLController::transformPoseToMap(const geometry_msgs::msg::PoseStamped & pose){
+    geometry_msgs::msg::PoseStamped pose_map;
+
+    try {
+        tf_->transform(
+            pose,
+            pose_map,
+            "map",
+            tf2::durationFromSec(0.1)
+        );
+    }
+    catch (tf2::TransformException & ex) {
+        auto node = node_.lock();
+        if (node) {
+            RCLCPP_WARN(node->get_logger(),
+                "Pose transform failed: %s", ex.what());
+        }
+        return pose; // fallback
+    }
+
+    return pose_map;
+}
 }  // namespace nav2_rl_controller
 
 // 注册到nav2插件系统

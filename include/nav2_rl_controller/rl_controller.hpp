@@ -142,6 +142,9 @@ protected:
 	
 	// 辅助函数：调试时将path保存到文本文件
 	void savePathToFile(const nav_msgs::msg::Path & path, const geometry_msgs::msg::PoseStamped & pose, const geometry_msgs::msg::Twist & velocity);
+	
+	// 将odom下的机器人位置转换到map坐标系下
+	geometry_msgs::msg::PoseStamped transformPoseToMap(const geometry_msgs::msg::PoseStamped & pose);
 };
 
 }  // namespace nav2_rl_controller
