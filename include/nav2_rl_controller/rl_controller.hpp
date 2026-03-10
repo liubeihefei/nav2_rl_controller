@@ -126,6 +126,7 @@ protected:
 	std::string output_compute_file = "/home/unitree/nav2_gps/nav2_rl_controller/logs/compute.txt";
 	std::string output_model_run_file = "/home/unitree/nav2_gps/nav2_rl_controller/logs/model_run.txt";
 	std::string output_path_file = "/home/unitree/nav2_gps/nav2_rl_controller/logs/path.txt";
+	std::string output_costmap_file = "/home/unitree/nav2_gps/nav2_rl_controller/logs/costmap.img";	
 
 	
 	// 辅助函数：从四元数计算 yaw
@@ -139,6 +140,9 @@ protected:
 	
 	// 辅助函数：调试时将障碍物距离绘制成图像并保存
 	bool saveCostmapImage(const std::vector<float>& obs, int image_size);
+
+	// 辅助函数：调试时将障碍物距离绘制成彩色图像并保存
+	bool saveCostmapColorImage();
 	
 	// 辅助函数：调试时将path保存到文本文件
 	void savePathToFile(const nav_msgs::msg::Path & path, const geometry_msgs::msg::PoseStamped & pose, const geometry_msgs::msg::Twist & velocity);

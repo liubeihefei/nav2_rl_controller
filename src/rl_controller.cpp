@@ -353,6 +353,7 @@ std::vector<float> RLController::assembleObservation(const geometry_msgs::msg::P
 	if(debug){
 		saveObservationToFile(current_frame, latest_plan_, * pose, * vel);
 		saveCostmapImage(current_frame, 600);
+		saveCostmapColorImage();
 	}
 
 	// 如果历史帧不足 history_length_：用当前帧（s0）填充前面的帧（与episode开始时保持一致）
@@ -1002,6 +1003,65 @@ bool RLController::saveCostmapImage(const std::vector<float>& obs, int image_siz
 	// 保存图像
 	bool success = cv::imwrite(output_img_file, image);
 	return success;
+}
+
+// 辅助函数：将 costmap 可视化为彩色图像并保存
+bool RLController::saveCostmapColorImage(){
+    if (!costmap_) {
+        std::cerr << "Costmap is null" << std::endl;
+        return false;
+    }
+
+    unsigned int size_x = costmap_->getSizeInCellsX();
+    unsigned int size_y = costmap_->getSizeInCellsY();
+
+    const unsigned char * data = costmap_->getCharMap();
+
+    if (!data) {
+        std::cerr << "Costmap data null" << std::endl;
+        return false;
+    }
+
+    // RGB图像
+    cv::Mat img(size_y, size_x, CV_8UC3);
+
+    for (unsigned int y = 0; y < size_y; y++) {
+        for (unsigned int x = 0; x < size_x; x++) {
+
+            unsigned char cost = data[y * size_x + x];
+
+            cv::Vec3b color;
+
+            if (cost == nav2_costmap_2d::FREE_SPACE) {
+                color = cv::Vec3b(255,255,255);   // 白
+            }
+            else if (cost == nav2_costmap_2d::LETHAL_OBSTACLE) {
+                color = cv::Vec3b(0,0,255);       // 红
+            }
+            else if (cost == nav2_costmap_2d::INSCRIBED_INFLATED_OBSTACLE) {
+                color = cv::Vec3b(0,165,255);     // 橙
+            }
+            else if (cost == nav2_costmap_2d::NO_INFORMATION) {
+                color = cv::Vec3b(120,120,120);   // 灰
+            }
+            else {
+                // inflation cost (蓝色渐变)
+                int v = std::max(50, 255 - cost);
+                color = cv::Vec3b(v,0,0);
+            }
+
+            // 翻转Y轴（costmap原点在左下）
+            img.at<cv::Vec3b>(size_y - 1 - y, x) = color;
+        }
+    }
+
+    // 放大方便观察
+    cv::Mat img_big;
+    cv::resize(img, img_big, cv::Size(), 4.0, 4.0, cv::INTER_NEAREST);
+
+    bool ok = cv::imwrite(output_costmap_file, img_big);
+
+    return ok;
 }
 
 // 辅助函数：将一次path保存到文本文件
